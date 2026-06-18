@@ -1,0 +1,12 @@
+# reports generated from real runs (may contain local paths / prompts)
+reports/
+*.json
+!examples/example-report.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.DS_Store

@@ -34,6 +34,11 @@ That paper studied ReAct-style agents on Gemma/Qwen. This tool measures the same
 characteristics for a *real* production agent (Claude Code) so we can see how
 well those findings transfer before doing any optimization work.
 
+📊 **First results:** see [`FINDINGS.md`](FINDINGS.md) — across 5 benchmark runs,
+KV-cache reuse holds universally (≥94% of context reused per turn), but the
+explore→execute phase shift is *task-dependent*: clean for search/refactor,
+an interleaved loop for debugging.
+
 ## What it measures
 
 Per session, extracted straight from the transcript (no instrumentation needed):

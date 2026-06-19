@@ -78,6 +78,31 @@ python -m cc_trace 20814a75 -o reports/run.html --json
 Transcripts live at `~/.claude/projects/<project>/<session>.jsonl`; this tool
 reads them read-only.
 
+### Compare runs
+
+Once you've profiled a few tasks (each `--json` dump, or just their transcripts),
+roll them up into one cross-run comparison:
+
+```bash
+python -m cc_trace compare reports/*.json -o reports/compare.html
+```
+
+It prints a comparison table and writes an HTML rollup with, per run, the
+phase mix, the **explore→execute separation** (`sep`), the tool mix, and the
+**cache-read share** (the KV-cache-reuse / decode-dominated signal):
+
+```
+run                     calls  turns  dur(s)  cost$  expl%  sep   cache%  top tool
+data task               3      7      48      0.68   0.67   0.75  0.94    Bash
+file search / refactor  15     27     75      2.24   0.80   0.48  0.98    Bash
+coding bug fix          34     60     606     9.20   0.41   0.09  1.00    Bash
+```
+
+`sep` = mean execute position − mean explore position over the run. A high `sep`
+is a clean **explore→execute phase shift** (search/refactor); a `sep` near zero
+means explore and execute **interleave** in a reproduce→fix→test loop (debugging).
+That is: the paper's clean phase shift holds for some task types but not all.
+
 ### Run a fresh benchmark task and profile it
 
 ```bash
@@ -101,6 +126,7 @@ cc_trace/
   parser.py    # transcript JSONL -> structured Trace (tool calls, turns, tokens)
   cost.py      # per-model USD price table + per-turn cost
   report.py    # Trace -> self-contained HTML dashboard (inline SVG/JS)
+  compare.py   # cross-run rollup: phase shift, tool mix, cache share
   cli.py       # `python -m cc_trace` entry point
 scripts/profile_task.sh   # run a task headless, then profile it
 tasks/                    # fixed benchmark prompts
@@ -109,8 +135,10 @@ examples/                 # a committed example report + json
 
 ## Roadmap
 
-- [ ] Aggregate **across** sessions/tasks/models for comparison charts
+- [x] Aggregate **across** sessions/tasks/models for comparison charts (`compare`)
 - [ ] File-access **graph** (which files co-occur in a run)
+- [ ] Track files touched via **Bash** redirects (`>`, heredocs), not just
+      Read/Edit/Write inputs — agents lean on Bash, so `file_access` under-counts
 - [ ] Detect retry **loops** (same tool+target failing repeatedly)
 - [ ] Parse `--output-format stream-json` live for in-flight profiling
 - [ ] Phase-transition metric (when does explore→execute crossover happen?)

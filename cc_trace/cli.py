@@ -28,6 +28,43 @@ from .report import render_html
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 
+def _compare_main(argv: list[str]) -> int:
+    """`cc-trace compare A.json B.jsonl <session-id> …` — cross-run rollup."""
+    from . import compare as cmp
+
+    ap = argparse.ArgumentParser(
+        prog="cc-trace compare",
+        description="Compare workload characteristics across several runs.")
+    ap.add_argument("targets", nargs="+",
+                    help="parsed .json reports, .jsonl transcripts, or session ids")
+    ap.add_argument("-o", "--out", default=None,
+                    help="write an HTML rollup to this path (in addition to the table)")
+    ap.add_argument("--open", action="store_true",
+                    help="open the HTML rollup in a browser when done")
+    args = ap.parse_args(argv)
+
+    rows = []
+    for tgt in args.targets:
+        try:
+            rows.append(cmp.summarize(cmp.load_trace_dict(tgt, _resolve)))
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+            print(f"skipping {tgt}: {e}", file=sys.stderr)
+    if not rows:
+        print("no usable runs to compare", file=sys.stderr)
+        return 1
+
+    print(cmp.render_text(rows))
+    if args.out:
+        out = Path(args.out)
+        if out.parent != Path(""):
+            out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(cmp.render_html(rows), encoding="utf-8")
+        print(f"\nwrote {out}", file=sys.stderr)
+        if args.open:
+            webbrowser.open(f"file://{out.resolve()}")
+    return 0
+
+
 def _all_transcripts() -> list[Path]:
     return sorted(
         PROJECTS_DIR.glob("*/*.jsonl"),
@@ -53,6 +90,10 @@ def _resolve(target: str | None, latest: bool) -> Path | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "compare":
+        return _compare_main(argv[1:])
+
     ap = argparse.ArgumentParser(
         prog="cc-trace",
         description="Trace and visualize what Claude Code does during a run.",

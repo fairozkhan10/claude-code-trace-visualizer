@@ -111,6 +111,25 @@ is a clean **explore→execute phase shift** (search/refactor); a `sep` near zer
 means explore and execute **interleave** in a reproduce→fix→test loop (debugging).
 That is: the paper's clean phase shift holds for some task types but not all.
 
+### Profile a run live (in-flight)
+
+Instead of profiling a saved transcript after the fact, watch a run as it happens
+via Claude Code's streaming output. Either let the tool launch it:
+
+```bash
+python -m cc_trace live "fix the failing test in foo.py" -o reports/live.html
+```
+
+or pipe an existing stream-json run into it:
+
+```bash
+claude -p "…" --output-format stream-json --verbose | python -m cc_trace live -
+```
+
+Each tool call prints as it streams in; the HTML report is written when the run
+ends. Because stream events have no transcript timestamp, durations are measured
+from event **arrival** time.
+
 ### Run a fresh benchmark task and profile it
 
 ```bash
@@ -135,6 +154,7 @@ cc_trace/
   cost.py      # per-model USD price table + per-turn cost
   report.py    # Trace -> self-contained HTML dashboard (inline SVG/JS)
   compare.py   # cross-run rollup: phase shift, tool mix, cache share
+  stream.py    # live profiling from `--output-format stream-json`
   cli.py       # `python -m cc_trace` entry point
 scripts/profile_task.sh   # run a task headless, then profile it
 tasks/                    # fixed benchmark prompts
@@ -150,7 +170,7 @@ examples/                 # a committed example report + json
 - [x] Detect retry **loops** (same tool+target failing repeatedly)
 - [x] Phase-transition metric — explore→execute **crossover** point + a `purity`
       score for how cleanly the run splits into the two phases
-- [ ] Parse `--output-format stream-json` live for in-flight profiling
+- [x] Parse `--output-format stream-json` live for in-flight profiling (`live`)
 
 ## Notes & limitations
 

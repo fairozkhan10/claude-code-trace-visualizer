@@ -89,10 +89,62 @@ def _resolve(target: str | None, latest: bool) -> Path | None:
     return None
 
 
+def _live_main(argv: list[str]) -> int:
+    """`cc-trace live -` (stdin) or `cc-trace live "<prompt>" [-- claude args]`."""
+    import time
+    from . import stream as st
+
+    ap = argparse.ArgumentParser(
+        prog="cc-trace live",
+        description="Profile a Claude Code run live from --output-format stream-json.")
+    ap.add_argument("prompt", help="a task prompt to run, or '-' to read "
+                                   "stream-json from stdin")
+    ap.add_argument("-o", "--out", default=None, help="output HTML path")
+    ap.add_argument("--json", action="store_true", help="also write the parsed trace JSON")
+    ap.add_argument("--open", action="store_true", help="open the report when done")
+    args, passthrough = ap.parse_known_args(argv)   # unknown args -> forwarded to claude
+
+    if args.prompt == "-":
+        source = sys.stdin
+        print("reading stream-json from stdin…", file=sys.stderr)
+    else:
+        source = st.claude_stream(args.prompt, passthrough)
+        print(">> launching claude (stream-json); profiling live…", file=sys.stderr)
+
+    t0 = time.time()
+    seen = [0]
+
+    def progress(obj, b):
+        # print each new tool call as it streams in
+        while seen[0] < len(b.tool_calls):
+            tc = b.tool_calls[seen[0]]
+            seen[0] += 1
+            print(f"  [+{time.time()-t0:5.1f}s] {tc.name:<10} {tc.phase:<8} "
+                  f"{(tc.label or '')[:60]}", file=sys.stderr)
+
+    trace = st.parse_stream(source, on_event=progress)
+
+    out = Path(args.out) if args.out else Path(f"{trace.session_id or 'live'}.html")
+    if out.parent != Path(""):
+        out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(render_html(trace), encoding="utf-8")
+    print(f"\nwrote {out}  ({len(trace.tool_calls)} tool calls, "
+          f"{len(trace.turns)} turns, {trace.duration:.0f}s, ${trace.total_cost:.3f})")
+    if args.json:
+        jpath = out.with_suffix(".json")
+        jpath.write_text(json.dumps(trace.as_dict(), indent=2), encoding="utf-8")
+        print(f"wrote {jpath}")
+    if args.open:
+        webbrowser.open(f"file://{out.resolve()}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] == "compare":
         return _compare_main(argv[1:])
+    if argv and argv[0] == "live":
+        return _live_main(argv[1:])
 
     ap = argparse.ArgumentParser(
         prog="cc-trace",

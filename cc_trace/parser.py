@@ -398,18 +398,120 @@ class Trace:
         }
 
 
+class _Builder:
+    """Incrementally assemble a :class:`Trace` from transcript/stream events.
+
+    ``feed(obj, ts)`` processes one event dict; ``ts`` is its epoch time — from
+    the transcript's ``timestamp`` when replaying a file, or wall-clock arrival
+    time when reading a live ``--output-format stream-json`` stream. This is the
+    shared core behind both :func:`parse_transcript` and the live stream parser.
+    """
+
+    def __init__(self) -> None:
+        self.pending: dict[str, ToolCall] = {}     # tool_use_id -> awaiting result
+        self.tool_calls: list[ToolCall] = []
+        self.turns: list[Turn] = []
+        self.user_prompts: list[str] = []
+        self.models: list[str] = []
+        self.session_id = self.cwd = self.git_branch = None
+        self.timestamps: list[float] = []
+        self.turn_idx = 0
+        self.call_idx = 0
+
+    def feed(self, obj: dict, ts: Optional[float] = None) -> None:
+        if not isinstance(obj, dict):
+            return
+        # stream-json uses session_id/snake; transcript uses sessionId/camel
+        self.session_id = self.session_id or obj.get("sessionId") or obj.get("session_id")
+        self.cwd = self.cwd or obj.get("cwd")
+        self.git_branch = self.git_branch or obj.get("gitBranch")
+        if ts:
+            self.timestamps.append(ts)
+
+        typ = obj.get("type")
+        msg = obj.get("message", {}) if isinstance(obj.get("message"), dict) else {}
+
+        if typ == "assistant":
+            model = msg.get("model")
+            if model and model not in self.models:
+                self.models.append(model)
+            usage = msg.get("usage", {}) or {}
+            content = msg.get("content", []) or []
+            calls_here = [c for c in content
+                          if isinstance(c, dict) and c.get("type") == "tool_use"]
+            self.turns.append(Turn(
+                index=self.turn_idx,
+                model=model,
+                timestamp=ts,
+                input_tokens=usage.get("input_tokens", 0),
+                output_tokens=usage.get("output_tokens", 0),
+                cache_read_tokens=usage.get("cache_read_input_tokens", 0),
+                cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
+                cost_usd=turn_cost(model, usage),
+                n_tool_calls=len(calls_here),
+            ))
+            for c in calls_here:
+                name = c.get("name", "?")
+                tin = c.get("input", {}) if isinstance(c.get("input"), dict) else {}
+                ops = _file_ops(name, tin)
+                tc = ToolCall(
+                    index=self.call_idx,
+                    id=c.get("id", f"call-{self.call_idx}"),
+                    name=name,
+                    label=_label(name, tin),
+                    phase=_phase_of(name, tin),
+                    start=ts,
+                    end=None,
+                    duration=None,
+                    is_error=False,
+                    files=[p for p, _ in ops],
+                    file_modes=dict(ops),
+                    output_chars=0,
+                    turn=self.turn_idx,
+                )
+                self.pending[tc.id] = tc
+                self.tool_calls.append(tc)
+                self.call_idx += 1
+            self.turn_idx += 1
+
+        elif typ == "user":
+            content = msg.get("content")
+            if isinstance(content, str):
+                if content.strip():
+                    self.user_prompts.append(content.strip()[:500])
+            elif isinstance(content, list):
+                for c in content:
+                    if not isinstance(c, dict):
+                        continue
+                    if c.get("type") == "text" and c.get("text", "").strip():
+                        self.user_prompts.append(c["text"].strip()[:500])
+                    elif c.get("type") == "tool_result":
+                        tc = self.pending.pop(c.get("tool_use_id", ""), None)
+                        if tc is None:
+                            continue
+                        tc.end = ts
+                        if tc.start is not None and ts is not None:
+                            tc.duration = max(0.0, ts - tc.start)
+                        tc.is_error = bool(c.get("is_error"))
+                        tc.output_chars = _content_len(c.get("content"))
+
+    def build(self) -> Trace:
+        return Trace(
+            session_id=self.session_id,
+            cwd=self.cwd,
+            git_branch=self.git_branch,
+            models=self.models,
+            start=min(self.timestamps) if self.timestamps else None,
+            end=max(self.timestamps) if self.timestamps else None,
+            tool_calls=self.tool_calls,
+            turns=self.turns,
+            user_prompts=self.user_prompts,
+        )
+
+
 def parse_transcript(path: str) -> Trace:
     """Read a transcript .jsonl file and build a :class:`Trace`."""
-    pending: dict[str, ToolCall] = {}       # tool_use_id -> ToolCall (awaiting result)
-    tool_calls: list[ToolCall] = []
-    turns: list[Turn] = []
-    user_prompts: list[str] = []
-    models: list[str] = []
-    session_id = cwd = git_branch = None
-    timestamps: list[float] = []
-    turn_idx = 0
-    call_idx = 0
-
+    b = _Builder()
     with open(path, "r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -419,95 +521,8 @@ def parse_transcript(path: str) -> Trace:
                 obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
-
-            session_id = session_id or obj.get("sessionId")
-            cwd = cwd or obj.get("cwd")
-            git_branch = git_branch or obj.get("gitBranch")
-            ts = _parse_ts(obj.get("timestamp"))
-            if ts:
-                timestamps.append(ts)
-
-            typ = obj.get("type")
-            msg = obj.get("message", {}) if isinstance(obj.get("message"), dict) else {}
-
-            if typ == "assistant":
-                model = msg.get("model")
-                if model and model not in models:
-                    models.append(model)
-                usage = msg.get("usage", {}) or {}
-                content = msg.get("content", []) or []
-                calls_here = [c for c in content
-                              if isinstance(c, dict) and c.get("type") == "tool_use"]
-                turns.append(Turn(
-                    index=turn_idx,
-                    model=model,
-                    timestamp=ts,
-                    input_tokens=usage.get("input_tokens", 0),
-                    output_tokens=usage.get("output_tokens", 0),
-                    cache_read_tokens=usage.get("cache_read_input_tokens", 0),
-                    cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
-                    cost_usd=turn_cost(model, usage),
-                    n_tool_calls=len(calls_here),
-                ))
-                for c in calls_here:
-                    name = c.get("name", "?")
-                    tin = c.get("input", {}) if isinstance(c.get("input"), dict) else {}
-                    ops = _file_ops(name, tin)
-                    tc = ToolCall(
-                        index=call_idx,
-                        id=c.get("id", f"call-{call_idx}"),
-                        name=name,
-                        label=_label(name, tin),
-                        phase=_phase_of(name, tin),
-                        start=ts,
-                        end=None,
-                        duration=None,
-                        is_error=False,
-                        files=[p for p, _ in ops],
-                        file_modes=dict(ops),
-                        output_chars=0,
-                        turn=turn_idx,
-                    )
-                    pending[tc.id] = tc
-                    tool_calls.append(tc)
-                    call_idx += 1
-                turn_idx += 1
-
-            elif typ == "user":
-                content = msg.get("content")
-                if isinstance(content, str):
-                    # a plain user prompt
-                    if content.strip():
-                        user_prompts.append(content.strip()[:500])
-                elif isinstance(content, list):
-                    for c in content:
-                        if not isinstance(c, dict):
-                            continue
-                        if c.get("type") == "text" and c.get("text", "").strip():
-                            user_prompts.append(c["text"].strip()[:500])
-                        elif c.get("type") == "tool_result":
-                            tc = pending.pop(c.get("tool_use_id", ""), None)
-                            if tc is None:
-                                continue
-                            tc.end = ts
-                            if tc.start is not None and ts is not None:
-                                tc.duration = max(0.0, ts - tc.start)
-                            tc.is_error = bool(c.get("is_error"))
-                            tc.output_chars = _content_len(c.get("content"))
-
-    start = min(timestamps) if timestamps else None
-    end = max(timestamps) if timestamps else None
-    return Trace(
-        session_id=session_id,
-        cwd=cwd,
-        git_branch=git_branch,
-        models=models,
-        start=start,
-        end=end,
-        tool_calls=tool_calls,
-        turns=turns,
-        user_prompts=user_prompts,
-    )
+            b.feed(obj, _parse_ts(obj.get("timestamp")))
+    return b.build()
 
 
 def _content_len(content: Any) -> int:

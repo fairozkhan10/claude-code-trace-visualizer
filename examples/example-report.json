@@ -83,6 +83,108 @@
       "writes": 1
     }
   ],
+  "file_graph": {
+    "window": 4,
+    "nodes": [
+      {
+        "file": "src/normalize.py",
+        "reads": 1,
+        "writes": 2
+      },
+      {
+        "file": "tests/test_parser.py",
+        "reads": 1,
+        "writes": 0
+      },
+      {
+        "file": "src",
+        "reads": 1,
+        "writes": 0
+      },
+      {
+        "file": "src/parser.py",
+        "reads": 1,
+        "writes": 0
+      },
+      {
+        "file": "tests/fixtures/expected.json",
+        "reads": 0,
+        "writes": 1
+      },
+      {
+        "file": "scripts/gen_fixture.py",
+        "reads": 1,
+        "writes": 0
+      },
+      {
+        "file": "CHANGELOG.md",
+        "reads": 0,
+        "writes": 1
+      }
+    ],
+    "edges": [
+      {
+        "source": "src/normalize.py",
+        "target": "src/parser.py",
+        "weight": 3
+      },
+      {
+        "source": "src/normalize.py",
+        "target": "tests/fixtures/expected.json",
+        "weight": 3
+      },
+      {
+        "source": "src",
+        "target": "src/normalize.py",
+        "weight": 2
+      },
+      {
+        "source": "scripts/gen_fixture.py",
+        "target": "src/normalize.py",
+        "weight": 2
+      },
+      {
+        "source": "src",
+        "target": "tests/test_parser.py",
+        "weight": 1
+      },
+      {
+        "source": "src/parser.py",
+        "target": "tests/test_parser.py",
+        "weight": 1
+      },
+      {
+        "source": "src/normalize.py",
+        "target": "tests/test_parser.py",
+        "weight": 1
+      },
+      {
+        "source": "src",
+        "target": "src/parser.py",
+        "weight": 1
+      },
+      {
+        "source": "CHANGELOG.md",
+        "target": "src/normalize.py",
+        "weight": 1
+      },
+      {
+        "source": "scripts/gen_fixture.py",
+        "target": "tests/fixtures/expected.json",
+        "weight": 1
+      },
+      {
+        "source": "CHANGELOG.md",
+        "target": "tests/fixtures/expected.json",
+        "weight": 1
+      },
+      {
+        "source": "CHANGELOG.md",
+        "target": "scripts/gen_fixture.py",
+        "weight": 1
+      }
+    ]
+  },
   "n_tool_calls": 12,
   "n_turns": 12,
   "n_errors": 2,

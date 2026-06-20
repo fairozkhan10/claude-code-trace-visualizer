@@ -115,6 +115,18 @@ _TEMPLATE = r"""<!doctype html>
   </div>
 
   <section>
+    <h2>File co-access graph</h2>
+    <p class="hint">Files touched close together in the run are linked; thicker links =
+      worked on together more often. Node size = how often a file is accessed,
+      color = read- vs. write-dominated. Reveals the clusters the agent edits as a unit.</p>
+    <svg id="filegraph"></svg>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--explore)"></i>read-dominated</span>
+      <span><i class="dot" style="background:var(--execute)"></i>write-dominated</span>
+    </div>
+  </section>
+
+  <section>
     <h2>Errors &amp; retries</h2>
     <p class="hint">Tool calls that returned an error (candidate retry loops).</p>
     <table id="errors"></table>
@@ -244,6 +256,39 @@ document.getElementById('cards').innerHTML = cards.map(([k,v])=>
   s+= errs.length? errs.map(c=>`<tr><td>${c.index}</td><td>${c.name}</td><td><code>${(c.label||'').replace(/</g,'&lt;')}</code></td><td class="num">+${((c.start-t0)||0).toFixed(1)}s</td></tr>`).join('')
             : `<tr><td colspan="4" style="color:var(--muted)">No tool errors. 🎉</td></tr>`;
   document.getElementById('errors').innerHTML=s;
+})();
+
+// ---- file co-access graph (circular layout) ----
+(function(){
+  const g=T.file_graph||{nodes:[],edges:[]}, nodes=g.nodes||[], edges=g.edges||[];
+  const host=document.getElementById('filegraph');
+  if(nodes.length<2){ host.outerHTML='<p class="hint">Not enough file access to graph.</p>'; return; }
+  const W=1120, H=Math.max(360, 60+nodes.length*16), cx=W/2, cy=H/2;
+  const R=Math.min(cx,cy)-90;
+  const pos={}, base=p=>p.split('/').pop();
+  nodes.forEach((n,i)=>{ const a=-Math.PI/2 + 2*Math.PI*i/nodes.length;
+    pos[n.file]={x:cx+R*Math.cos(a), y:cy+R*Math.sin(a), a}; });
+  const maxAcc=Math.max(1,...nodes.map(n=>n.reads+n.writes));
+  const maxW=Math.max(1,...edges.map(e=>e.weight));
+  let s=`<svg viewBox="0 0 ${W} ${H}" id="fg">`;
+  edges.forEach(e=>{ const p=pos[e.source],q=pos[e.target]; if(!p||!q) return;
+    s+=`<line x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}" stroke="#58a6ff" `+
+       `stroke-width="${0.6+3.4*e.weight/maxW}" stroke-opacity="${0.18+0.5*e.weight/maxW}"/>`; });
+  nodes.forEach(n=>{ const p=pos[n.file], acc=n.reads+n.writes;
+    const r=4+9*Math.sqrt(acc/maxAcc), col=n.writes>n.reads?'#f0883e':'#3fb950';
+    const right=Math.cos(p.a)>=0, lx=p.x+(right?1:-1)*(r+5);
+    s+=`<circle data-f="${encodeURIComponent(n.file)}" data-r="${n.reads}" data-w="${n.writes}" `+
+       `cx="${p.x}" cy="${p.y}" r="${r}" fill="${col}" opacity="0.92"/>`;
+    s+=`<text x="${lx}" y="${p.y+3}" fill="#8b949e" font-size="10" `+
+       `text-anchor="${right?'start':'end'}">${base(n.file)}</text>`; });
+  s+=`</svg>`;
+  host.outerHTML=s;
+  document.querySelectorAll('#fg circle[data-f]').forEach(c=>{
+    c.addEventListener('mousemove',e=>showTip(e,
+      `<code>${decodeURIComponent(c.dataset.f).replace(/</g,'&lt;')}</code><br>`+
+      `reads ${c.dataset.r} · writes ${c.dataset.w}`));
+    c.addEventListener('mouseleave',hideTip);
+  });
 })();
 
 function shorten(p){ return p.length>52? '…'+p.slice(-50) : p; }

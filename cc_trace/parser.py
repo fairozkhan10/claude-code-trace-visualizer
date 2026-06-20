@@ -63,7 +63,7 @@ READ_OR_RUN_CMDS = {
 
 # Characters that mean a token is shell/code, not a plain filename. Filenames
 # with these are vanishingly rare; inline code fragments are full of them.
-_BAD_PATH_CHARS = set("()[]{};*$=<>\"'`! ")
+_BAD_PATH_CHARS = set("()[]{};*$=<>\"'`!\\ ")
 
 
 def _is_pathish(tok: str) -> bool:
@@ -266,6 +266,49 @@ class Trace:
             out[tc.phase] += 1
         return out
 
+    def file_graph(self, window: int = 4, max_nodes: int = 24) -> dict:
+        """Co-access graph: files worked on near each other in the run.
+
+        Nodes are files (with read/write counts); an edge joins two files that
+        are touched within ``window`` consecutive file-accesses of each other,
+        weighted by how often that happens. This surfaces the clusters of files
+        an agent edits together. Capped to the ``max_nodes`` most-accessed files
+        to keep the picture legible.
+        """
+        seq: list[tuple[str, str]] = []   # ordered (file, mode) accesses
+        nodes: dict[str, dict] = {}
+        for tc in self.tool_calls:
+            for f in tc.files:
+                mode = tc.file_modes.get(f) if tc.file_modes else None
+                if mode is None:
+                    mode = "read" if tc.phase == "explore" else "write"
+                seq.append((f, mode))
+                n = nodes.setdefault(f, {"file": f, "reads": 0, "writes": 0})
+                n["writes" if mode == "write" else "reads"] += 1
+
+        keep = {n["file"] for n in sorted(
+            nodes.values(), key=lambda x: x["reads"] + x["writes"], reverse=True
+        )[:max_nodes]}
+
+        edges: dict[tuple[str, str], int] = {}
+        files = [f for f, _ in seq]
+        for i, a in enumerate(files):
+            if a not in keep:
+                continue
+            for b in files[i + 1:i + window]:
+                if b == a or b not in keep:
+                    continue
+                edges[tuple(sorted((a, b)))] = edges.get(tuple(sorted((a, b))), 0) + 1
+
+        return {
+            "window": window,
+            "nodes": [n for n in sorted(
+                nodes.values(), key=lambda x: x["reads"] + x["writes"], reverse=True)
+                if n["file"] in keep],
+            "edges": [{"source": a, "target": b, "weight": w}
+                      for (a, b), w in sorted(edges.items(), key=lambda kv: -kv[1])],
+        }
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
@@ -280,6 +323,7 @@ class Trace:
             "phase_counts": self.phase_counts(),
             "tool_breakdown": self.tool_breakdown(),
             "file_access": self.file_access(),
+            "file_graph": self.file_graph(),
             "n_tool_calls": len(self.tool_calls),
             "n_turns": len(self.turns),
             "n_errors": sum(1 for tc in self.tool_calls if tc.is_error),

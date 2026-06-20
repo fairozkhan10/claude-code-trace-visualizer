@@ -64,6 +64,12 @@ different repos:
   (`…EEXXEXXEEXEXX…`) — a reproduce → hypothesize → edit → re-test loop, where
   exploration recurs *throughout* rather than front-loading.
 
+A second, independent metric agrees. **Purity** — how cleanly the run splits at
+its best explore→execute crossover point (1.0 = a perfect read-then-write shift,
+~0.5 = fully interleaved) — is **0.93 / 0.83 for refactor** vs **0.68 / 0.70 for
+bug fixing**. So both `sep` (separation of the two phases) and `purity`
+(crispness of the single transition) draw the same line between task types.
+
 So the paper's clean temporal phase shift holds for *navigational* tasks
 (search, refactor) but breaks down for *iterative* tasks (debugging). A serving
 system tuned for "explore early, execute late" would mismodel debugging

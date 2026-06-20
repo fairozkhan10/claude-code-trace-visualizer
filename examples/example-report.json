@@ -185,6 +185,12 @@
       }
     ]
   },
+  "phase_crossover": {
+    "index": 4,
+    "pos": 0.333,
+    "purity": 0.833,
+    "n": 12
+  },
   "retry_loops": [
     {
       "tool": "Bash",

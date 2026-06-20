@@ -148,8 +148,9 @@ examples/                 # a committed example report + json
       runs), not just Read/Edit/Write inputs — agents lean on Bash
 - [x] File-access **graph** (which files co-occur in a run)
 - [x] Detect retry **loops** (same tool+target failing repeatedly)
+- [x] Phase-transition metric — explore→execute **crossover** point + a `purity`
+      score for how cleanly the run splits into the two phases
 - [ ] Parse `--output-format stream-json` live for in-flight profiling
-- [ ] Phase-transition metric (when does explore→execute crossover happen?)
 
 ## Notes & limitations
 

@@ -87,7 +87,11 @@ def summarize(d: dict) -> dict[str, Any]:
     cache_read, fresh_in, out = (tt.get("cache_read", 0), tt.get("input", 0),
                                  tt.get("output", 0))
     tb = d.get("tool_breakdown", []) or []
+    xover = d.get("phase_crossover", {}) or {}
     return {
+        "crossover_pos": xover.get("pos"),
+        "purity": xover.get("purity"),
+        "crossover_index": xover.get("index"),
         "label": _label(d),
         "session": (d.get("session_id") or "")[:8],
         "n_tool_calls": d.get("n_tool_calls", 0),
@@ -125,6 +129,7 @@ def render_text(rows: list[dict]) -> str:
         ("loops", None, lambda r: r["n_retry_loops"]),
         ("expl%", None, lambda r: _fmt(r["explore_share"])),
         ("sep", None, lambda r: _fmt(r["separation"])),
+        ("pure", None, lambda r: _fmt(r["purity"])),
         ("cache%", None, lambda r: _fmt(r["cache_read_share"])),
         ("top tool", None, lambda r: r["top_tool"] or "—"),
     ]
@@ -135,12 +140,18 @@ def render_text(rows: list[dict]) -> str:
     out = [line(head), line(["-" * w for w in widths])]
     out += [line(b) for b in body]
     out.append("")
-    out.append("sep = execute_pos − explore_pos  (↑ cleaner explore→execute shift; "
+    out.append("sep  = execute_pos − explore_pos  (↑ cleaner explore→execute shift; "
                "~0 = interleaved loop)")
+    out.append("pure = how cleanly the run splits at the explore→execute crossover "
+               "(1.0 = perfect phase shift, ~0.5 = interleaved)")
     out.append("cache% = cache-read share of read tokens (↑ more KV-cache-heavy / "
                "decode-dominated)")
+    out.append("phase sequence — '|' marks the explore→execute crossover point:")
     for r in rows:
-        out.append(f"  {r['label']:<24} {r['sequence'] or '(no phased calls)'}")
+        seq = r["sequence"] or ""
+        k = r["crossover_index"]
+        marked = (seq[:k] + "|" + seq[k:]) if (seq and k is not None) else (seq or "(no phased calls)")
+        out.append(f"  {r['label']:<24} {marked}")
     return "\n".join(out)
 
 
@@ -177,6 +188,7 @@ _TEMPLATE = r"""<!doctype html>
   .seq i { font-style:normal; }
   .seq .E { color:var(--explore); }
   .seq .X { color:var(--execute); }
+  .seq .xover { color:var(--accent); font-weight:700; }
   .mix { display:flex; height:14px; border-radius:3px; overflow:hidden; min-width:120px; }
   .mix span { display:block; }
   .legend { display:flex; gap:16px; font-size:12px; color:var(--muted); margin-top:10px; }
@@ -230,8 +242,8 @@ document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':
 (function(){
   const cols=[['run','label'],['calls','n_tool_calls'],['turns','n_turns'],
     ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],['loops','n_retry_loops'],
-    ['expl%','explore_share'],['sep','separation'],['cache%','cache_read_share'],
-    ['top tool','top_tool']];
+    ['expl%','explore_share'],['sep','separation'],['pure','purity'],
+    ['cache%','cache_read_share'],['top tool','top_tool']];
   let s=`<tr>${cols.map(([h],i)=>`<th class="${i?'num':''}">${h}</th>`).join('')}</tr>`;
   s+=R.map(r=>`<tr>${cols.map(([h,k],i)=>{
     let v=r[k];
@@ -243,13 +255,16 @@ document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':
   document.getElementById('tbl').innerHTML=s;
 })();
 
-// ---- phase sequences ----
+// ---- phase sequences (with '|' marking the explore→execute crossover) ----
 (function(){
   document.getElementById('seqs').innerHTML = R.map(r=>{
-    const seq=(r.sequence||'').split('').map(ch=>`<i class="${ch}">${ch}</i>`).join('');
+    const raw=r.sequence||'', k=r.crossover_index;
+    const cells=raw.split('').map((ch,i)=>
+      (k!=null && i===k ? '<i class="xover">|</i>' : '') + `<i class="${ch}">${ch}</i>`).join('')
+      + (k!=null && k===raw.length ? '<i class="xover">|</i>' : '');
     return `<div style="margin:8px 0"><div style="color:var(--muted);font-size:12px">${r.label} `+
-      `· sep ${fmt(r.separation)} · n=${(r.sequence||'').length}</div>`+
-      `<div class="seq">${seq||'(no phased calls)'}</div></div>`;
+      `· sep ${fmt(r.separation)} · purity ${fmt(r.purity)} · n=${raw.length}</div>`+
+      `<div class="seq">${cells||'(no phased calls)'}</div></div>`;
   }).join('');
 })();
 

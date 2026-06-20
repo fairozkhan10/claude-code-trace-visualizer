@@ -212,6 +212,12 @@ document.getElementById('cards').innerHTML = cards.map(([k,v])=>
   let s=`<svg viewBox="0 0 ${W} ${H}">`;
   s+=`<line x1="${m}" y1="${H-m}" x2="${W-m}" y2="${H-m}" stroke="#30363d"/>`;
   s+=`<line x1="${m}" y1="${m}" x2="${m}" y2="${H-m}" stroke="#30363d"/>`;
+  // explore→execute crossover marker
+  const xo=T.phase_crossover||{};
+  if(xo.index!=null && N>1){ const cx=X(Math.min(xo.index, N-1));
+    s+=`<line x1="${cx}" y1="${m}" x2="${cx}" y2="${H-m}" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    s+=`<text x="${cx+4}" y="${m+10}" fill="#58a6ff" font-size="10">crossover ${(100*xo.pos).toFixed(0)}% · purity ${xo.purity}</text>`;
+  }
   s+=line(pts.explore,'#3fb950')+line(pts.execute,'#f0883e');
   s+=`<text x="${W-m}" y="${Y(ex)-4}" fill="#3fb950" font-size="11" text-anchor="end">explore ${ex}</text>`;
   s+=`<text x="${W-m}" y="${Y(exc)-4}" fill="#f0883e" font-size="11" text-anchor="end">execute ${exc}</text>`;

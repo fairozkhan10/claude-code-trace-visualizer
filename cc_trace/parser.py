@@ -266,6 +266,35 @@ class Trace:
             out[tc.phase] += 1
         return out
 
+    def phase_crossover(self) -> dict:
+        """Where the run flips from explore-heavy to execute-heavy.
+
+        Finds the split point ``k`` over the ordered explore/execute calls that
+        best separates an explore prefix from an execute suffix (maximises
+        ``#explore before k + #execute after k``). ``pos`` is that point as a
+        fraction of the run; ``purity`` is how cleanly the run splits there
+        (1.0 = a perfect read-then-write phase shift, ~0.5 = no structure /
+        fully interleaved). Complements ``sep`` from the compare view.
+        """
+        phases = [tc.phase for tc in self.tool_calls
+                  if tc.phase in ("explore", "execute")]
+        n = len(phases)
+        if n == 0:
+            return {"index": None, "pos": None, "purity": None, "n": 0}
+        exec_after = sum(1 for p in phases if p == "execute")
+        expl_before = 0
+        best_k, best_score = 0, exec_after          # k = 0: empty prefix
+        for k in range(1, n + 1):
+            if phases[k - 1] == "explore":
+                expl_before += 1
+            else:
+                exec_after -= 1
+            score = expl_before + exec_after
+            if score > best_score:
+                best_score, best_k = score, k
+        return {"index": best_k, "pos": round(best_k / n, 3),
+                "purity": round(best_score / n, 3), "n": n}
+
     def retry_loops(self, min_attempts: int = 2) -> list[dict]:
         """Where the agent repeated the same tool on the same target with errors.
 
@@ -358,6 +387,7 @@ class Trace:
             "tool_breakdown": self.tool_breakdown(),
             "file_access": self.file_access(),
             "file_graph": self.file_graph(),
+            "phase_crossover": self.phase_crossover(),
             "retry_loops": self.retry_loops(),
             "n_tool_calls": len(self.tool_calls),
             "n_turns": len(self.turns),

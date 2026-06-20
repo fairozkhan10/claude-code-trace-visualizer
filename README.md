@@ -48,14 +48,17 @@ Per session, extracted straight from the transcript (no instrumentation needed):
 | Tool calls, order, arguments | `assistant` → `tool_use` blocks |
 | Per-call duration | `tool_result` timestamp − `tool_use` timestamp |
 | Success / failure (retry candidates) | `tool_result.is_error` |
-| Files touched (read vs. write) | tool input `file_path` + phase |
+| Files touched (read vs. write) | tool input `file_path`, **plus shell redirects / here-docs / `tee` / script runs parsed from Bash commands** |
 | Tokens: input / output / cache-read / cache-write | `message.usage` per turn |
 | Context growth | cumulative cache-read + input per turn |
 | Estimated cost (USD) | usage × per-model price table |
 | Phase (explore vs. execute) | tool name + read-only shell heuristic |
 
 Bash calls are sub-classified: read-only commands (`ls`, `grep`, `git status`,
-…) count as *explore*; mutating ones count as *execute*.
+…) count as *explore*; mutating ones count as *execute*. File I/O done through the
+shell — output redirects (`>`, `>>`), here-docs, `tee`, and reading/running a
+script — is parsed out of the command string so `file_access` isn't under-counted
+(agents lean on Bash over the Write/Edit tools).
 
 ## Install
 
@@ -141,9 +144,9 @@ examples/                 # a committed example report + json
 ## Roadmap
 
 - [x] Aggregate **across** sessions/tasks/models for comparison charts (`compare`)
+- [x] Track files touched via **Bash** redirects (`>`, heredocs, `tee`, script
+      runs), not just Read/Edit/Write inputs — agents lean on Bash
 - [ ] File-access **graph** (which files co-occur in a run)
-- [ ] Track files touched via **Bash** redirects (`>`, heredocs), not just
-      Read/Edit/Write inputs — agents lean on Bash, so `file_access` under-counts
 - [ ] Detect retry **loops** (same tool+target failing repeatedly)
 - [ ] Parse `--output-format stream-json` live for in-flight profiling
 - [ ] Phase-transition metric (when does explore→execute crossover happen?)

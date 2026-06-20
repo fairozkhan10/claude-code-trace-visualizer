@@ -27,7 +27,11 @@ STEPS = [
     ("Bash",  {"command": "python -m pytest -q", "description": "rerun tests"}, 3.8, True),
     ("Edit",  {"file_path": "src/normalize.py"}, 0.3, False),
     ("Bash",  {"command": "python -m pytest -q", "description": "rerun tests"}, 3.9, False),
-    ("Write", {"file_path": "CHANGELOG.md"}, 0.2, False),
+    # file I/O done through the shell — caught by the Bash file-tracking parser
+    ("Bash",  {"command": "python scripts/gen_fixture.py > tests/fixtures/expected.json",
+               "description": "regenerate fixture"}, 0.6, False),
+    ("Bash",  {"command": "cat > CHANGELOG.md << 'EOF'\n- fix normalize()\nEOF",
+               "description": "write changelog"}, 0.2, False),
 ]
 
 lines = [

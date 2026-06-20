@@ -82,10 +82,12 @@ serving rather than one-size-fits-all.
   statistical. Next step is more reps and a second model.
 - **Synthetic benchmark tasks** on heterogeneous repos; task difficulty isn't
   controlled across repos.
-- **Bash blind spot:** because Claude does much of its file I/O via Bash
-  (`>`, heredocs, running scripts), the parser's `file_access` under-counts files
-  touched — it only sees Read/Edit/Write tool inputs. Fixing this is on the
-  roadmap and would sharpen any file-level analysis.
+- **Bash file I/O** is now parsed from the command string (output redirects,
+  here-docs, `tee`, script runs), so `file_access` no longer ignores the shell —
+  important because Claude does most of its file I/O through Bash, not the
+  Write/Edit tools. It remains heuristic: file reads/writes that happen *inside*
+  an inline `python -c`/`node -e` script (e.g. `open(..., "w")`) are still
+  invisible, and `sed -i` in-place edits aren't counted.
 - Durations are wall-clock (include permission/queue waits); costs are list-price
   estimates from `cc_trace/cost.py`.
 

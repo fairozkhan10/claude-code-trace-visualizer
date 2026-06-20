@@ -15,6 +15,7 @@ The transcript is one JSON object per line. The lines we care about:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Optional
@@ -43,6 +44,77 @@ READONLY_GIT = {"status", "log", "diff", "show", "branch", "remote", "ls-files",
 
 FILE_INPUT_KEYS = ("file_path", "path", "notebook_path", "filePath")
 
+# --- Bash file-I/O extraction -------------------------------------------------
+# Agents do a lot of their file I/O through the shell (output redirects, here-docs
+# writing files, `tee`, and running scripts), none of which shows up as a tool
+# `file_path`. We parse the command string so file access isn't under-counted.
+#
+# Writes: output redirects (`>`, `>>`, `2>`, `&>`) and `tee`. Reads: the file/
+# script argument of common read-or-run commands. Best-effort & heuristic.
+_REDIR_RE = re.compile(r"(?:\d*>>?|&>>?)\s*(\"[^\"]+\"|'[^']+'|[^\s;|&<>]+)")
+_TEE_RE = re.compile(r"\btee\s+(?:-a\s+)?(\"[^\"]+\"|'[^']+'|[^\s;|&<>]+)")
+# Commands whose first path-like argument is a file being read or executed.
+READ_OR_RUN_CMDS = {
+    "cat", "head", "tail", "less", "more", "wc", "nl", "od", "diff",
+    "python", "python3", "pytest", "node", "bash", "sh", "ruby", "go",
+    "source", "grep", "rg",
+}
+
+
+# Characters that mean a token is shell/code, not a plain filename. Filenames
+# with these are vanishingly rare; inline code fragments are full of them.
+_BAD_PATH_CHARS = set("()[]{};*$=<>\"'`! ")
+
+
+def _is_pathish(tok: str) -> bool:
+    """Cheap filter: looks like a filename/path, not a flag, glob, or code."""
+    tok = tok.strip().strip("\"'").split("::")[0]   # drop pytest ::nodeid suffix
+    if not tok or tok.startswith("-"):
+        return False
+    if tok.startswith("/dev/"):                     # /dev/null and friends
+        return False
+    if any(ch in _BAD_PATH_CHARS for ch in tok):
+        return False
+    # a path separator, or an extension (a dot that isn't a leading dotfile dot)
+    return ("/" in tok) or ("." in tok[1:])
+
+
+def _bash_files(command: str) -> list[tuple[str, str]]:
+    """Best-effort (path, mode) pairs touched by a shell command.
+
+    ``mode`` is ``"read"`` or ``"write"``; a path written *and* read resolves to
+    ``"write"`` (the side effect we care about).
+    """
+    ops: dict[str, str] = {}
+
+    def add(path: str, mode: str) -> None:
+        if not _is_pathish(path):
+            return
+        path = path.strip().strip("\"'").split("::")[0]
+        if mode == "write" or path not in ops:
+            ops[path] = mode if mode == "write" else ops.get(path, "read")
+
+    for m in _REDIR_RE.finditer(command):
+        add(m.group(1), "write")
+    for m in _TEE_RE.finditer(command):
+        add(m.group(1), "write")
+
+    # reads / script runs: first path-like arg after a read-or-run command
+    words = command.replace("|", " | ").split()
+    for i, w in enumerate(words):
+        if w in READ_OR_RUN_CMDS or w.split("/")[-1] in READ_OR_RUN_CMDS:
+            for nxt in words[i + 1:]:
+                if nxt in ("|", "&&", "||", ";", ">", ">>", "<"):
+                    break
+                if nxt in ("-c", "-e", "-m"):     # inline code/module, not a file
+                    break
+                if nxt.startswith("-"):
+                    continue
+                if _is_pathish(nxt):
+                    add(nxt, "read")
+                    break
+    return list(ops.items())
+
 
 def _phase_of(name: str, tool_input: dict) -> str:
     if name == "Bash":
@@ -67,10 +139,14 @@ def _classify_bash(command: str) -> str:
     return "explore" if lead in READONLY_SHELL else "execute"
 
 
-def _files_touched(name: str, tool_input: dict) -> list[str]:
+def _file_ops(name: str, tool_input: dict) -> list[tuple[str, str]]:
+    """Files touched by a tool call, as (path, "read"|"write") pairs."""
+    if name == "Bash":
+        return _bash_files(tool_input.get("command", ""))
     for k in FILE_INPUT_KEYS:
         if k in tool_input and isinstance(tool_input[k], str):
-            return [tool_input[k]]
+            mode = "read" if name in EXPLORE_TOOLS else "write"
+            return [(tool_input[k], mode)]
     return []
 
 
@@ -111,7 +187,8 @@ class ToolCall:
     end: Optional[float]
     duration: Optional[float]        # seconds, end - start
     is_error: bool
-    files: list[str]
+    files: list[str]                 # paths touched (any mode)
+    file_modes: dict[str, str]       # path -> "read" | "write"
     output_chars: int                # size of returned tool_result content
     turn: int                        # which assistant turn issued it
 
@@ -175,10 +252,11 @@ class Trace:
         for tc in self.tool_calls:
             for f in tc.files:
                 a = agg.setdefault(f, {"file": f, "reads": 0, "writes": 0})
-                if tc.phase == "explore":
-                    a["reads"] += 1
-                else:
-                    a["writes"] += 1
+                # prefer the per-file mode; fall back to the call's phase
+                mode = tc.file_modes.get(f) if tc.file_modes else None
+                if mode is None:
+                    mode = "read" if tc.phase == "explore" else "write"
+                a["writes" if mode == "write" else "reads"] += 1
         return sorted(agg.values(),
                       key=lambda x: x["reads"] + x["writes"], reverse=True)
 
@@ -265,6 +343,7 @@ def parse_transcript(path: str) -> Trace:
                 for c in calls_here:
                     name = c.get("name", "?")
                     tin = c.get("input", {}) if isinstance(c.get("input"), dict) else {}
+                    ops = _file_ops(name, tin)
                     tc = ToolCall(
                         index=call_idx,
                         id=c.get("id", f"call-{call_idx}"),
@@ -275,7 +354,8 @@ def parse_transcript(path: str) -> Trace:
                         end=None,
                         duration=None,
                         is_error=False,
-                        files=_files_touched(name, tin),
+                        files=[p for p, _ in ops],
+                        file_modes=dict(ops),
                         output_chars=0,
                         turn=turn_idx,
                     )

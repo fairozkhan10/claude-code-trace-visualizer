@@ -10,7 +10,7 @@ It answers one question:
 It parses a Claude Code session transcript and renders a **self-contained,
 offline HTML dashboard**: a timeline of tool calls, a read/explore → execute/write
 phase view, per-turn token & context growth, a tool-call breakdown, a file-access
-table, a file co-access graph, and an errors/retries list.
+table, a file co-access graph, detected retry loops, and an errors/retries list.
 
 👉 Open [`examples/example-report.html`](examples/example-report.html) in a
 browser to see a sample report. Regenerate it any time with
@@ -147,7 +147,7 @@ examples/                 # a committed example report + json
 - [x] Track files touched via **Bash** redirects (`>`, heredocs, `tee`, script
       runs), not just Read/Edit/Write inputs — agents lean on Bash
 - [x] File-access **graph** (which files co-occur in a run)
-- [ ] Detect retry **loops** (same tool+target failing repeatedly)
+- [x] Detect retry **loops** (same tool+target failing repeatedly)
 - [ ] Parse `--output-format stream-json` live for in-flight profiling
 - [ ] Phase-transition metric (when does explore→execute crossover happen?)
 

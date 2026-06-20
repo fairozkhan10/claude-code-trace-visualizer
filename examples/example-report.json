@@ -185,6 +185,17 @@
       }
     ]
   },
+  "retry_loops": [
+    {
+      "tool": "Bash",
+      "target": "python -m pytest -q",
+      "attempts": 3,
+      "errors": 2,
+      "first_index": 4,
+      "last_index": 9,
+      "span_s": 11.200000047683716
+    }
+  ],
   "n_tool_calls": 12,
   "n_turns": 12,
   "n_errors": 2,

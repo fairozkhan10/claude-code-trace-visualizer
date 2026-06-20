@@ -127,6 +127,13 @@ _TEMPLATE = r"""<!doctype html>
   </section>
 
   <section>
+    <h2>Retry loops</h2>
+    <p class="hint">Same tool + same target attempted repeatedly with at least one
+      failure — where the agent got stuck (a command that keeps failing, an edit redone).</p>
+    <table id="retries"></table>
+  </section>
+
+  <section>
     <h2>Errors &amp; retries</h2>
     <p class="hint">Tool calls that returned an error (candidate retry loops).</p>
     <table id="errors"></table>
@@ -155,6 +162,7 @@ const cards=[
   ['Tool calls', fmtN(T.n_tool_calls)],
   ['Model turns', fmtN(T.n_turns)],
   ['Errors', fmtN(T.n_errors)],
+  ['Retry loops', fmtN((T.retry_loops||[]).length)],
   ['Output tokens', fmtN(tt.output)],
   ['Cache-read tokens', fmtN(tt.cache_read)],
   ['Est. cost', '$'+T.total_cost.toFixed(3)],
@@ -247,6 +255,17 @@ document.getElementById('cards').innerHTML = cards.map(([k,v])=>
   s+= f.length? f.map(r=>`<tr><td><code>${shorten(r.file)}</code></td><td class="num">${r.reads}</td><td class="num">${r.writes}</td></tr>`).join('')
             : `<tr><td colspan="3" style="color:var(--muted)">No file operations.</td></tr>`;
   document.getElementById('files').innerHTML=s;
+})();
+
+// ---- retry loops ----
+(function(){
+  const loops=T.retry_loops||[];
+  let s=`<tr><th>Tool</th><th>Target</th><th class="num">attempts</th><th class="num">errors</th><th class="num">span</th><th class="num">at</th></tr>`;
+  s+= loops.length? loops.map(r=>`<tr><td>${r.tool}</td><td><code>${shorten((r.target||'').replace(/</g,'&lt;'))}</code></td>`+
+        `<td class="num">${r.attempts}</td><td class="num"><span class="pill err">${r.errors}</span></td>`+
+        `<td class="num">${fmtDur(r.span_s)}</td><td class="num">#${r.first_index}–${r.last_index}</td></tr>`).join('')
+      : `<tr><td colspan="6" style="color:var(--muted)">No retry loops detected. 🎉</td></tr>`;
+  document.getElementById('retries').innerHTML=s;
 })();
 
 // ---- errors ----

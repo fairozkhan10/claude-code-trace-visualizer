@@ -95,6 +95,7 @@ def summarize(d: dict) -> dict[str, Any]:
         "duration": d.get("duration", 0.0),
         "cost": d.get("total_cost", 0.0),
         "n_errors": d.get("n_errors", 0),
+        "n_retry_loops": len(d.get("retry_loops", []) or []),
         "explore": explore,
         "execute": execute,
         "explore_share": round(explore / phased, 3) if phased else None,
@@ -121,6 +122,7 @@ def render_text(rows: list[dict]) -> str:
         ("dur(s)", None, lambda r: f"{r['duration']:.0f}"),
         ("cost$", None, lambda r: f"{r['cost']:.2f}"),
         ("err", None, lambda r: r["n_errors"]),
+        ("loops", None, lambda r: r["n_retry_loops"]),
         ("expl%", None, lambda r: _fmt(r["explore_share"])),
         ("sep", None, lambda r: _fmt(r["separation"])),
         ("cache%", None, lambda r: _fmt(r["cache_read_share"])),
@@ -227,7 +229,7 @@ document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':
 // ---- metrics table ----
 (function(){
   const cols=[['run','label'],['calls','n_tool_calls'],['turns','n_turns'],
-    ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],
+    ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],['loops','n_retry_loops'],
     ['expl%','explore_share'],['sep','separation'],['cache%','cache_read_share'],
     ['top tool','top_tool']];
   let s=`<tr>${cols.map(([h],i)=>`<th class="${i?'num':''}">${h}</th>`).join('')}</tr>`;

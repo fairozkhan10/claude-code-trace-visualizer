@@ -266,6 +266,40 @@ class Trace:
             out[tc.phase] += 1
         return out
 
+    def retry_loops(self, min_attempts: int = 2) -> list[dict]:
+        """Where the agent repeated the same tool on the same target with errors.
+
+        Groups tool calls by (tool, target) — target being the first file touched,
+        else the (truncated) command/label — and flags any group hit
+        ``min_attempts`` times with at least one error. These are the candidate
+        retry loops: a command that keeps failing, an edit that keeps being redone.
+        """
+        groups: dict[tuple[str, str], dict] = {}
+        for tc in self.tool_calls:
+            target = tc.files[0] if tc.files else (tc.label or "")
+            if not target:
+                continue
+            g = groups.setdefault((tc.name, target), {
+                "tool": tc.name, "target": target, "attempts": 0,
+                "errors": 0, "indices": [], "starts": []})
+            g["attempts"] += 1
+            g["errors"] += 1 if tc.is_error else 0
+            g["indices"].append(tc.index)
+            if tc.start is not None:
+                g["starts"].append(tc.start)
+
+        loops = []
+        for g in groups.values():
+            if g["attempts"] >= min_attempts and g["errors"] >= 1:
+                starts = g["starts"]
+                loops.append({
+                    "tool": g["tool"], "target": g["target"],
+                    "attempts": g["attempts"], "errors": g["errors"],
+                    "first_index": g["indices"][0], "last_index": g["indices"][-1],
+                    "span_s": (max(starts) - min(starts)) if len(starts) > 1 else 0.0,
+                })
+        return sorted(loops, key=lambda x: (x["errors"], x["attempts"]), reverse=True)
+
     def file_graph(self, window: int = 4, max_nodes: int = 24) -> dict:
         """Co-access graph: files worked on near each other in the run.
 
@@ -324,6 +358,7 @@ class Trace:
             "tool_breakdown": self.tool_breakdown(),
             "file_access": self.file_access(),
             "file_graph": self.file_graph(),
+            "retry_loops": self.retry_loops(),
             "n_tool_calls": len(self.tool_calls),
             "n_turns": len(self.turns),
             "n_errors": sum(1 for tc in self.tool_calls if tc.is_error),

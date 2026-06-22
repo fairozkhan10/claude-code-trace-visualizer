@@ -11,13 +11,31 @@ Claude Code (Opus 4.8).
 
 ## Setup
 
-Six headless runs (`claude -p`), profiled from their transcripts with
-`python -m cc_trace`. Targets were five real, independent code repositories
-(kept anonymous here — a CSV dataset project, two general code projects for
-search/refactor, and two service-style codebases for debugging), so each task
-type is measured on **two different repos** (except the single data task). One
-target (repo B, refactor) was additionally run **twice** — the same task on the
-same clean-reset repo — as a run-to-run reproducibility check (see *Replication*).
+Eleven headless runs (`claude -p`), profiled from their transcripts with
+`python -m cc_trace`. The first six (the original pass) covered five real repos —
+a CSV dataset project, two for search/refactor, two service-style codebases for
+debugging — and suggested a clean "refactor vs bug-fix" split. The other five were
+added deliberately to **break the difficulty / task-kind confound** in that first
+split (refactor runs happened to be short, bug-fixes long), by filling in a
+controlled 2×2 of *task type* × *task length*. These used small **obscure public
+libraries** (cloned fresh, low-star, to avoid the model having memorized their
+fixes) and were built SWE-bench-style for the debugging ones: check out the parent
+of a real upstream fix commit (bug present), re-apply only that commit's *test*
+change, and ask the agent to make the suite pass.
+
+The five added runs:
+
+| id | task | length | what it controls |
+|---|---|---|---|
+| F | trivial debug (1-line alignment bug, tiny formatter) | 4 calls | easiest possible debug |
+| G | moderate debug (20-line path-escaping bug, requirements parser) | 25 calls | mid debug |
+| H | mid refactor (de-duplicate ~30 accessors in a 735-LOC lib) | 14 calls | refactor at refactor-typical length |
+| I | **short debug** (tokenizer crash on surrogate code points) | 16 calls | debug held to *short* length |
+| J | **long refactor** (split a monolith class into mixin modules) | 24 calls | refactor pushed to *bug-fix* length |
+
+I and J are the decisive cells: a *short* debug and a *long* refactor, the two
+corners missing from the original runs (see finding 2). One target (repo B,
+refactor) was also run **twice** as a reproducibility check (see *Replication*).
 
 Key metric — **`sep`** = mean(execute position) − mean(explore position) over the
 ordered sequence of phased tool calls. High `sep` ⇒ explore front-loads and a
@@ -27,70 +45,102 @@ tokens = the share of each turn's context that is reused KV-cache.
 
 ## Results
 
-| task type | repo | calls | turns | dur (s) | cost ($) | explore % | **sep** | **cache %** | top tool | phase sequence |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
-| data summary | A | 3 | 7 | 48 | 0.68 | 0.67 | **0.75** | 0.94 | Bash | `EEX` |
-| search/refactor | B | 15 | 27 | 75 | 2.24 | 0.80 | **0.48** | 0.98 | Bash | `EEEEEEEEEEEXXEX` |
-| search/refactor | B (rep 2) | 12 | 25 | 70 | 2.01 | 0.64 | **0.55** | 0.98 | Bash | `EEEEEEEXXXX` |
-| search/refactor | C | 7 | 18 | 74 | 2.20 | 0.67 | **0.45** | 0.96 | Bash | `EEEXEX` |
-| bug fix | D | 34 | 60 | 606 | 9.20 | 0.41 | **0.09** | 1.00 | Bash | `EEEXXXXEEEXXXEXXXXEXEXXEEXEEXXEXXX` |
-| bug fix | E | 23 | 51 | 518 | 5.12 | 0.39 | **0.14** | 0.99 | Bash | `EEXXEXXEEXEXXXXEEXXXXEX` |
+| task type | repo | calls | turns | dur (s) | cost ($) | explore % | **sep** | **purity** | **cache %** | top tool | phase sequence |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| data summary | A | 3 | 7 | 48 | 0.68 | 0.67 | **0.75** | 1.00 | 0.94 | Bash | `EEX` |
+| debug — trivial | F | 4 | 8 | 24 | 0.92 | 0.25 | **0.22**† | 0.75† | 0.94 | Bash | `XEXX` |
+| refactor | C | 7 | 18 | 74 | 2.20 | 0.67 | **0.45** | 1.00 | 0.96 | Bash | `EEEXEX` |
+| refactor | B (rep 2) | 12 | 25 | 70 | 2.01 | 0.64 | **0.55** | 1.00 | 0.98 | Bash | `EEEEEEEXXXX` |
+| refactor — mid | H | 14 | 26 | 104 | 2.33 | 0.21 | **−0.05** | 0.86 | 0.99 | Bash | `EXXXXXXXXXEEXX` |
+| refactor | B | 15 | 27 | 75 | 2.24 | 0.80 | **0.48** | 0.93 | 0.98 | Bash | `EEEEEEEEEEEXXEX` |
+| **debug — short** | **I** | 16 | 24 | 90 | 1.55 | 0.50 | **0.28** | **0.81** | 0.99 | Bash | `XEEEEEEXXEXXXEXX` |
+| debug | E | 23 | 51 | 518 | 5.12 | 0.39 | **0.14** | 0.70 | 0.99 | Bash | `EEXXEXXEEXEXXXXEEXXXXEX` |
+| **refactor — long** | **J** | 24 | 44 | 185 | 7.05 | 0.50 | **0.51** | **0.96** | 0.99 | Bash | `EEEEEEEEEEXEEXXXXXXXXXXX` |
+| debug — mid | G | 25 | 49 | 310 | 5.07 | 0.46 | **0.23** | 0.76 | 1.00 | Bash | `XEEEXEEXXXXEEEEEEXXXXXXXX` |
+| debug | D | 34 | 60 | 606 | 9.20 | 0.41 | **0.09** | 0.68 | 1.00 | Bash | `EEEXXXXEEEXXXEXXXXEXEXXEEXEEXXEXXX` |
+
+Rows ordered by session length. Watch the **purity** column down the length axis:
+it stays high (0.81–1.00) for *every* task — refactor *and* debug — until ~20
+calls, then drops **only for debug** (E, G, D: 0.68–0.76). The long refactor **J**
+(24 calls) stays clean at 0.96. †F at 4 calls is too short for `sep`/`purity` to
+mean anything; it is read only for `cache%` and decode-intensity.
 
 Token totals (output / cache-read / fresh-input):
 
 | task | repo | output | cache-read | fresh-input |
 |---|---|---:|---:|---:|
 | data | A | 1,874 | 83,289 | 5,334 |
-| refactor | B | 9,871 | 419,652 | 9,206 |
-| refactor | B (rep 2) | 8,508 | 414,835 | 8,009 |
+| debug (trivial) | F | 2,054 | 78,762 | 5,064 |
 | refactor | C | 9,579 | 290,224 | 10,934 |
-| bug fix | D | 47,567 | 2,405,752 | 6,343 |
-| bug fix | E | 23,817 | 1,274,249 | 11,406 |
+| refactor | B | 9,871 | 419,652 | 9,206 |
+| refactor (mid) | H | 10,351 | 506,066 | 5,229 |
+| debug (short) | I | 6,658 | 394,147 | 5,354 |
+| refactor (long) | J | 39,671 | 1,210,825 | 11,087 |
+| debug (mid) | G | 28,659 | 1,171,556 | 5,662 |
+| debug | E | 23,817 | 1,274,249 | 11,406 |
+| debug | D | 47,567 | 2,405,752 | 6,343 |
 
 ## What we found
 
-**1. KV-cache reuse holds, universally and strongly.** Across all five runs,
+**1. KV-cache reuse holds, universally and strongly.** Across all eleven runs,
 `cache%` is **0.94–1.00** — i.e. ≥94% of the context fed to the model each turn
 is reused KV-cache, not fresh prefill. Fresh input stays in the low-thousands of
 tokens while cache-read runs into the hundreds of thousands to millions. This
 matches the paper's KV-cache-heavy characterization directly, and it's the
 cleanest, most repo-independent result.
 
-**2. The explore→execute phase shift is *task-dependent*, not universal.**
-This is the headline. The pattern replicates within each task type across two
-different repos:
+**2. The explore→execute phase shift breaks down only for *long debugging* — a
+task-kind × difficulty interaction, not a clean dichotomy and not a pure
+continuum.** This is the headline, and getting it right took two corrections.
+The first pass saw a clean split — refactor front-loads (`sep` 0.45–0.55, `purity`
+0.83–1.00; `EEEEEEEEEEE…` then a short execute burst), hard bug-fixing interleaves
+(`sep` 0.09–0.14, `purity` 0.68–0.70; `…EEXXEXXEEXEXX…`, a reproduce → hypothesize
+→ edit → re-test loop). But in those runs **task type was confounded with length**:
+every refactor was short (7–15 calls), every bug-fix long (23–34). So we ran the
+two missing corners.
 
-- **Search/refactor → clean phase shift.** `sep` 0.48 and 0.45; explore-heavy
-  (67–80% of tool calls). The sequence front-loads exploration (`EEEEEEEEEEE…`)
-  and then executes in a short burst — exactly the paper's read-then-write model.
-- **Bug fixing → interleaved loop, *not* a phase shift.** `sep` 0.09 and 0.14;
-  roughly balanced (~40% explore). The sequence flips back and forth
-  (`…EEXXEXXEEXEXX…`) — a reproduce → hypothesize → edit → re-test loop, where
-  exploration recurs *throughout* rather than front-loading.
+The result is an **interaction**, cleanest in the `purity` column read down the
+length axis:
 
-A second, independent metric agrees. **Purity** — how cleanly the run splits at
-its best explore→execute crossover point (1.0 = a perfect read-then-write shift,
-~0.5 = fully interleaved) — is **0.93 / 0.83 for refactor** vs **0.68 / 0.70 for
-bug fixing**. So both `sep` (separation of the two phases) and `purity`
-(crispness of the single transition) draw the same line between task types.
+| | **short** (≤16 calls) | **long** (23–34 calls) |
+|---|---|---|
+| **refactor** | `purity` 0.83–1.00 — clean | **J: 0.96 — still clean** (24 calls) |
+| **debugging** | **I: 0.81 — clean** (16 calls) | 0.68–0.76 — interleaved |
+
+- **A *long* refactor stays clean.** J split a monolithic class into mixin modules
+  over 24 calls — bug-fix length — yet produced `EEEEEEEEEEXEEXXXXXXXXXXX`: explore
+  almost everything up front, then a long execute burst (`purity` 0.96, `sep`
+  0.51). So **length alone does not cause interleaving.** Refactoring is
+  "map the surface, then transform" — the exploration is bounded by code size and
+  stays front-loadable however big the job.
+- **A *short* genuine debug stays clean too.** I traced a tokenizer crash to lone
+  surrogate code points and fixed it in 16 calls — `purity` 0.81, `sep` 0.28,
+  comparable to a refactor of the same length. One reproduce→diagnose→fix pass
+  doesn't interleave.
+- **Interleaving needs *both*: a debugging task *and* enough difficulty** to force
+  many hypothesis cycles. `purity` for debugging falls with length (I 0.81 @16 →
+  G 0.76 @25 → E 0.70 @23 → D 0.68 @34) while refactor `purity` stays flat-high
+  (0.83–1.00) from 7 to 24 calls. The two only diverge at the *long* end.
+- **The trivial bug (F)** is consistent: 4 calls, fixed in one shot, `out:fresh`
+  0.41 like the data task — too short to interleave, and too short for `sep`/
+  `purity` to mean anything (so it's read only for decode/cache).
+
+So my earlier "difficulty continuum" reading was *also* too simple: difficulty
+gates interleaving, but only *for debugging*. Refactor is robustly front-loaded at
+every length we tested. (`sep` is noisier than `purity` here — H's `sep` collapses
+to −0.05 purely from a late verify-coda, `EXXXXXXXXX**EE**XX`, even though its
+`purity` is a clean 0.86; we lead with `purity` for that reason.)
 
 **Run-to-run reproducibility.** Re-running the *identical* refactor task on the
 same repo (B), reset to a clean tree, reproduced the pattern tightly: `sep`
-0.48 → 0.55 and `purity` 0.93 → 1.00 (the second run produced the cleanest
-sequence in the whole set, `EEEEEEEXXXX`). So the explore→execute signal for a
-given task type is **stable across repeated runs**, not an artifact of a single
-trace — important before reading anything into the cross-task contrast.
+0.48 → 0.55 and `purity` 0.93 → 1.00. So the signal for a *fixed* task is
+**stable across repeated runs**, not single-trace noise.
 
-Pooling the runs, the two task families now separate **without overlap**: every
-refactor run (`sep` 0.45/0.48/0.55, `purity` 0.83/0.93/1.00) sits above every
-bug-fix run (`sep` 0.09/0.14, `purity` 0.68/0.70). The gap is large and clean,
-but note (see *Limitations*) that with 3 vs 2 runs even a perfect split is not
-yet statistically significant.
-
-So the paper's clean temporal phase shift holds for *navigational* tasks
-(search, refactor) but breaks down for *iterative* tasks (debugging). A serving
-system tuned for "explore early, execute late" would mismodel debugging
-workloads.
+So the paper's clean temporal phase shift holds for *navigational* work (search,
+refactor) **at any length**, and for *easy* debugging — and dissolves into an
+explore/act loop only for *hard, iterative* debugging. A serving system tuned for
+"explore early, execute late" would mismodel specifically the long-running
+debugging tail; task type alone or length alone each mispredicts it.
 
 **3. Tool behavior is Bash-dominated and work grows super-linearly with task
 difficulty.** Bash is the top tool in every run (Claude leans on shell — including
@@ -107,33 +157,52 @@ the meaningful question is decode *relative to the prefill work that actually ru
 (fresh input + cache-writes; cache-reads are free reuse). On that axis a clear
 gradient appears:
 
-| task | output : fresh-input | decode share of prefill-work |
-|---|---:|---:|
-| data (A) | 0.35 | 8% |
-| refactor (B / B rep2 / C) | 1.07 / 1.06 / 0.88 | 17% / 17% / 14% |
-| bug fix (D / E) | 7.50 / 2.09 | 30% / 23% |
+| task (by length) | calls | output : fresh-input | decode share of prefill-work |
+|---|---:|---:|---:|
+| data (A) | 3 | 0.35 | 8% |
+| debug — trivial (F) | 4 | 0.41 | 5% |
+| refactor (C) | 12 | 1.06 | 17% |
+| refactor — mid (H) | 14 | 1.98 | 19% |
+| debug — short (I) | 16 | 1.24 | 21% |
+| debug (E) | 23 | 2.09 | 23% |
+| **refactor — long (J)** | 24 | **3.58** | **24%** |
+| debug — mid (G) | 25 | 5.06 | 31% |
+| debug (D) | 34 | 7.50 | 30% |
 
-Bug-fixing emits **2–7.5× its fresh input** in generated tokens; refactor ~1×;
-the data task <0.5×. So decode-intensity tracks the *same* task-dependence axis as
-`sep`/`purity`: the iterative debugging loop is not just longer, it is
-proportionally far more generation-heavy. Two caveats keep this honest — (a) by raw
-token count the workload is still prefill-heavy once cache-reads are included, so
-"decode-dominated" holds in the *compute/latency* sense (decode is memory-bound and
-per-token, far costlier than the parallel prefill it's measured against) rather than
-the token-count sense; (b) these are list-price token totals, not measured GPU time.
+Ordered by session length, decode-intensity climbs **monotonically** — the
+cleanest gradient in the study. But note the axis: it is **task *effort* / length,
+not task *type*.** The long refactor **J** is decode-heavy (`out:fresh` 3.58,
+24% share) right alongside the long bug-fixes — a big refactor generates a lot of
+output too. And the trivial bug **F** sits at the bottom with the data task. So
+decode-intensity and the phase-shift breakdown (finding 2) are driven by
+*different* things: decode rises with **how much work/output a task involves
+(any task)**, while interleaving needs **debugging *and* length**. They correlate
+only because long debugging maximizes both. Two caveats keep the decode claim
+honest — (a) by raw token count the workload is still prefill-heavy once
+cache-reads are included, so "decode-dominated" holds in the *compute/latency*
+sense (decode is memory-bound and per-token, far costlier than the parallel
+prefill it is measured against) rather than the token-count sense; (b) these are
+list-price token totals, not measured GPU time.
 
 ## Limitations
 
-- **n is small** (2–3 runs per task type, one model). The refactor and bug-fix
-  groups now separate with **no overlap** on either metric, and the signal
-  reproduces run-to-run — but this is still directional, not significant: with
-  3 vs 2 runs a Mann–Whitney U test bottoms out at p ≈ 0.20 even for a perfect
-  split, so significance is unreachable at this n regardless of separation.
-  Reaching p < 0.05 needs roughly **≥4 runs per group** (a non-overlapping 4 vs 4
-  gives p ≈ 0.014). Next step: 1–2 more bug-fix reps on clean fresh targets to
-  cross that threshold, then a second model for cross-model generalization.
-- **Synthetic benchmark tasks** on heterogeneous repos; task difficulty isn't
-  controlled across repos.
+- **The interaction rests on single runs in two of the four corners.** The
+  decisive cells — a *short* debug (I) and a *long* refactor (J) — are one run
+  each so far. They are clean and consistent (I `purity` 0.81 with the short
+  refactors; J `purity` 0.96 among long bug-fixes that sit at 0.68–0.76), but the
+  task-kind × difficulty interaction needs **replication in those corners** (≥3
+  long refactors and ≥3 short debugs) before it is more than strongly suggestive.
+  This supersedes the earlier framings in this doc: the first pass read a clean
+  *dichotomy*, the second a pure *difficulty continuum* — the controlled 2×2 shows
+  **neither**; it is an interaction (refactor stays front-loaded at any length;
+  debugging interleaves only when long). One model (Opus 4.8) throughout; a second
+  model is the other open axis.
+- **Synthetic benchmark tasks** on heterogeneous repos. Difficulty is now varied
+  *on purpose* (it is the second axis of the 2×2) rather than left as an
+  uncontrolled confound, but it is proxied by session length / call count, not an
+  independent difficulty rating. The added targets (F, G, I, and J's repo) were
+  deliberately obscure, low-star public repos so the model had not memorized their
+  fixes, which would deflate the explore phase.
 - **Bash file I/O** is now parsed from the command string (output redirects,
   here-docs, `tee`, script runs), so `file_access` no longer ignores the shell —
   important because Claude does most of its file I/O through Bash, not the

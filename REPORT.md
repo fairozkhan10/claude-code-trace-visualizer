@@ -28,7 +28,7 @@ beyond the brief along the way:
 
 Yes — every element, with one clearly-flagged exception:
 
-| Caeden asked for | Status |
+| Fairoz was asked for | Status |
 |---|---|
 | Tool calls | ✅ timeline + breakdown |
 | Operations | ✅ file access, phases, co-access graph |

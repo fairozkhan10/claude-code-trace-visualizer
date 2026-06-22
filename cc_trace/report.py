@@ -115,6 +115,16 @@ _TEMPLATE = r"""<!doctype html>
   </div>
 
   <section>
+    <h2>Network activity</h2>
+    <p class="hint">Network the agent reached <em>through its tools</em> — curl/wget,
+      git remote ops, package installs, ssh/scp, plus WebFetch/WebSearch/MCP. Parsed
+      from command strings (best-effort). Does <b>not</b> include Claude Code's own
+      model API calls — those never appear in the transcript.</p>
+    <div id="net-summary" class="hint" style="margin-bottom:10px"></div>
+    <div style="max-height:340px;overflow:auto"><table id="net"></table></div>
+  </section>
+
+  <section>
     <h2>File co-access graph</h2>
     <p class="hint">Files touched close together in the run are linked; thicker links =
       worked on together more often. Node size = how often a file is accessed,
@@ -261,6 +271,27 @@ document.getElementById('cards').innerHTML = cards.map(([k,v])=>
   s+= f.length? f.map(r=>`<tr><td><code>${shorten(r.file)}</code></td><td class="num">${r.reads}</td><td class="num">${r.writes}</td></tr>`).join('')
             : `<tr><td colspan="3" style="color:var(--muted)">No file operations.</td></tr>`;
   document.getElementById('files').innerHTML=s;
+})();
+
+// ---- network activity ----
+(function(){
+  const na=T.network_activity||{total:0,by_kind:[],requests:[]};
+  const kc={http:'#58a6ff',api:'#58a6ff',git:'#f0883e',package:'#a371f7',
+    ssh:'#3fb950',dns:'#d29922',socket:'#db61a2',probe:'#8b949e',
+    search:'#56d4dd',mcp:'#e3b341'};
+  const col=k=>kc[k]||'#8b949e';
+  const sum=document.getElementById('net-summary');
+  if(!na.total){ sum.textContent='No agent-initiated network activity detected.';
+    document.getElementById('net').outerHTML=''; return; }
+  sum.innerHTML=`<b>${na.total}</b> request${na.total>1?'s':''} · `+
+    na.by_kind.map(k=>`<span class="pill" style="border:1px solid ${col(k.kind)};color:${col(k.kind)}">`+
+      `${k.kind} ${k.count}</span>`).join(' ');
+  let s=`<tr><th class="num">#</th><th>kind</th><th>target</th><th>via</th></tr>`;
+  s+= na.requests.map(r=>`<tr><td class="num">${r.index}</td>`+
+    `<td><span class="pill" style="border:1px solid ${col(r.kind)};color:${col(r.kind)}">${r.kind}</span></td>`+
+    `<td><code>${shorten((r.target||'').replace(/</g,'&lt;'))}</code>${r.error?' <span class="pill err">err</span>':''}</td>`+
+    `<td>${r.tool}</td></tr>`).join('');
+  document.getElementById('net').innerHTML=s;
 })();
 
 // ---- retry loops ----

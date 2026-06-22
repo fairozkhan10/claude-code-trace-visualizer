@@ -18,10 +18,15 @@ def ts(sec: float) -> str:
 # (tool, input, dur_seconds, is_error)
 STEPS = [
     ("Bash",  {"command": "ls -R src tests", "description": "list project"}, 0.4, False),
+    ("Bash",  {"command": "git fetch origin && git log --oneline -5",
+               "description": "sync & check recent history"}, 0.9, False),
     ("Read",  {"file_path": "tests/test_parser.py"}, 0.2, False),
     ("Grep",  {"pattern": "def normalize", "path": "src"}, 0.3, False),
     ("Read",  {"file_path": "src/parser.py"}, 0.2, False),
     ("Bash",  {"command": "python -m pytest -q", "description": "run tests"}, 4.1, True),
+    ("Bash",  {"command": "pip install pytest-mock", "description": "install missing test dep"}, 2.3, False),
+    ("WebFetch", {"url": "https://docs.pytest.org/en/stable/how-to/monkeypatch.html",
+                  "prompt": "how to patch a function"}, 1.2, False),
     ("Read",  {"file_path": "src/normalize.py"}, 0.2, False),
     ("Edit",  {"file_path": "src/normalize.py"}, 0.3, False),
     ("Bash",  {"command": "python -m pytest -q", "description": "rerun tests"}, 3.8, True),

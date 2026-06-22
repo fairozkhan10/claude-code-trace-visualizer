@@ -52,6 +52,7 @@ Per session, extracted straight from the transcript (no instrumentation needed):
 | Per-call duration | `tool_result` timestamp − `tool_use` timestamp |
 | Success / failure (retry candidates) | `tool_result.is_error` |
 | Files touched (read vs. write) | tool input `file_path`, **plus shell redirects / here-docs / `tee` / script runs parsed from Bash commands** |
+| **Network activity** (curl/wget, git remote ops, package installs, ssh/scp, WebFetch/WebSearch/MCP) | **parsed from Bash command strings + the web/MCP tool inputs** |
 | Tokens: input / output / cache-read / cache-write | `message.usage` per turn |
 | Context growth | cumulative cache-read + input per turn |
 | Estimated cost (USD) | usage × per-model price table |
@@ -62,6 +63,13 @@ Bash calls are sub-classified: read-only commands (`ls`, `grep`, `git status`,
 shell — output redirects (`>`, `>>`), here-docs, `tee`, and reading/running a
 script — is parsed out of the command string so `file_access` isn't under-counted
 (agents lean on Bash over the Write/Edit tools).
+
+The **network panel** is built the same way: the agent reaches the network mostly
+through the shell (`curl`/`wget`, `git clone`/`fetch`/`push`, `pip`/`npm`/`uv`
+installs, `ssh`/`scp`), plus the `WebFetch`/`WebSearch`/MCP tools — all parsed
+from command strings and tool inputs. Note this captures the network the **agent**
+initiates; it does *not* include Claude Code's own model-API calls, which never
+appear in the transcript (seeing those would need a proxy in front of the CLI).
 
 ## Install
 

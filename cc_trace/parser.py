@@ -116,6 +116,114 @@ def _bash_files(command: str) -> list[tuple[str, str]]:
     return list(ops.items())
 
 
+# --- Network-activity extraction ---------------------------------------------
+# The agent reaches the network mostly through the shell (curl/wget, git remote
+# ops, package installs, ssh/scp) plus the WebFetch/WebSearch/MCP tools. None of
+# it is a structured field, so — as with file I/O above — we parse the command
+# string. This captures the network the *agent* initiates; it does NOT see Claude
+# Code's own model API calls (those aren't in the transcript). Best-effort.
+_URL_RE = re.compile(r"((?:https?|ftp|git|ssh)://[^\s'\"|;&>)]+)")
+_SCP_RE = re.compile(r"\b([\w.-]+@[\w.-]+:[^\s'\"|;&>]+)")   # git@host:path, user@host:path
+_NET_CMDS = {
+    "curl": "http", "wget": "http", "http": "http", "https": "http",
+    "aria2c": "http", "httpie": "http", "ssh": "ssh", "scp": "ssh",
+    "sftp": "ssh", "rsync": "ssh", "nc": "socket", "netcat": "socket",
+    "telnet": "socket", "ping": "probe", "dig": "dns", "nslookup": "dns",
+    "host": "dns", "gh": "api", "hub": "api",
+}
+_PKG_CMDS = {"pip", "pip3", "uv", "npm", "yarn", "pnpm", "poetry", "pipenv",
+             "gem", "cargo", "go", "apt", "apt-get", "brew", "conda", "bundle"}
+_PKG_NET_SUB = {"install", "download", "add", "ci", "fetch", "update",
+                "upgrade", "get", "sync", "i"}
+_GIT_NET_SUB = {"clone", "fetch", "pull", "push", "ls-remote", "remote",
+                "submodule"}
+
+
+def _host_of(url: str) -> str:
+    """Compact host[/path-head] label from a URL or scp-style target."""
+    u = url.strip().strip("\"'")
+    for pre in ("https://", "http://", "ftp://", "git://", "ssh://"):
+        if u.startswith(pre):
+            u = u[len(pre):]
+            break
+    if "@" in u.split("/")[0]:          # strip user@ / git@ from the host part
+        u = u.split("@", 1)[1]
+    return u[:60]
+
+
+def _bash_network(command: str) -> list[tuple[str, str]]:
+    """Best-effort (kind, target) network operations in a shell command.
+
+    ``kind`` is http / git / package / ssh / dns / socket / probe / api; ``target``
+    is a host, URL, or short descriptor. Catches curl/wget, git remote ops,
+    package installs, ssh/scp and a few probes — the network the agent reaches
+    through the shell. Heuristic, like :func:`_bash_files`.
+    """
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(kind: str, target: str) -> None:
+        key = (kind, target or kind)
+        if key not in seen:
+            seen.add(key)
+            out.append(key)
+
+    for seg in re.split(r"[;|&\n]+", command):
+        words = seg.split()
+        i = 0
+        while i < len(words) and (
+            words[i] in ("sudo", "time", "env", "nohup", "xargs")
+            or ("=" in words[i] and "/" not in words[i])
+        ):
+            i += 1
+        if i >= len(words):
+            continue
+        lead = words[i].split("/")[-1]
+        rest = words[i + 1:]
+        urls = _URL_RE.findall(seg)
+        scps = _SCP_RE.findall(seg)
+
+        if lead == "git":
+            sub = next((w for w in rest if not w.startswith("-")), "")
+            if sub in _GIT_NET_SUB:
+                # remote/url if present, else the named remote (e.g. "origin")
+                remote = next((w for w in rest
+                               if w != sub and not w.startswith("-")), "")
+                tgt = (_host_of(urls[0]) if urls else
+                       _host_of(scps[0]) if scps else remote or sub)
+                add("git", tgt)
+        elif lead in _PKG_CMDS:
+            # net subcommand may not be first (e.g. `uv pip install`, `cargo …`)
+            sub = next((w for w in rest if w in _PKG_NET_SUB), "")
+            if sub:
+                pkg = next((w for w in rest[rest.index(sub) + 1:]
+                            if not w.startswith("-")), "")
+                add("package", f"{lead} {sub} {pkg}".strip()[:60])
+        elif lead in _NET_CMDS:
+            kind = _NET_CMDS[lead]
+            if urls:
+                add(kind, _host_of(urls[0]))
+            elif scps:
+                add(kind, _host_of(scps[0]))
+            else:
+                tgt = next((w for w in rest if not w.startswith("-")), lead)
+                add(kind, _host_of(tgt))
+    return out
+
+
+def _tool_network(name: str, tool_input: dict) -> list[tuple[str, str]]:
+    """Network operations implied by a tool call, as (kind, target) pairs."""
+    if name == "Bash":
+        return _bash_network(tool_input.get("command", ""))
+    if name == "WebFetch":
+        return [("http", _host_of(str(tool_input.get("url", ""))))]
+    if name == "WebSearch":
+        return [("search", str(tool_input.get("query", ""))[:60])]
+    if name.startswith("mcp__"):
+        return [("mcp", name[len("mcp__"):][:60])]
+    return []
+
+
 def _phase_of(name: str, tool_input: dict) -> str:
     if name == "Bash":
         return _classify_bash(tool_input.get("command", ""))
@@ -191,6 +299,7 @@ class ToolCall:
     file_modes: dict[str, str]       # path -> "read" | "write"
     output_chars: int                # size of returned tool_result content
     turn: int                        # which assistant turn issued it
+    network: list[dict] = field(default_factory=list)  # [{kind, target}] net ops
 
 
 @dataclass
@@ -259,6 +368,29 @@ class Trace:
                 a["writes" if mode == "write" else "reads"] += 1
         return sorted(agg.values(),
                       key=lambda x: x["reads"] + x["writes"], reverse=True)
+
+    def network_activity(self) -> dict:
+        """Network the agent reached *through its tools* — curl/wget, git remote
+        ops, package installs, ssh/scp, plus WebFetch/WebSearch/MCP calls.
+
+        Parsed from command strings & tool inputs (see the network-extraction
+        helpers); best-effort. Does **not** include Claude Code's own model API
+        calls — those never appear in the transcript.
+        """
+        by_kind: dict[str, int] = {}
+        reqs: list[dict] = []
+        for tc in self.tool_calls:
+            for op in tc.network:
+                by_kind[op["kind"]] = by_kind.get(op["kind"], 0) + 1
+                reqs.append({"index": tc.index, "turn": tc.turn, "tool": tc.name,
+                             "kind": op["kind"], "target": op["target"],
+                             "error": tc.is_error})
+        return {
+            "total": len(reqs),
+            "by_kind": [{"kind": k, "count": c}
+                        for k, c in sorted(by_kind.items(), key=lambda kv: -kv[1])],
+            "requests": reqs,
+        }
 
     def phase_counts(self) -> dict[str, int]:
         out = {"explore": 0, "execute": 0, "other": 0}
@@ -386,6 +518,7 @@ class Trace:
             "phase_counts": self.phase_counts(),
             "tool_breakdown": self.tool_breakdown(),
             "file_access": self.file_access(),
+            "network_activity": self.network_activity(),
             "file_graph": self.file_graph(),
             "phase_crossover": self.phase_crossover(),
             "retry_loops": self.retry_loops(),
@@ -454,6 +587,7 @@ class _Builder:
                 name = c.get("name", "?")
                 tin = c.get("input", {}) if isinstance(c.get("input"), dict) else {}
                 ops = _file_ops(name, tin)
+                net = _tool_network(name, tin)
                 tc = ToolCall(
                     index=self.call_idx,
                     id=c.get("id", f"call-{self.call_idx}"),
@@ -468,6 +602,7 @@ class _Builder:
                     file_modes=dict(ops),
                     output_chars=0,
                     turn=self.turn_idx,
+                    network=[{"kind": k, "target": t} for k, t in net],
                 )
                 self.pending[tc.id] = tc
                 self.tool_calls.append(tc)

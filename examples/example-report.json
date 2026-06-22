@@ -6,31 +6,31 @@
     "claude-sonnet-4-6"
   ],
   "start": 1781773200.0,
-  "end": 1781773221.0,
-  "duration": 21.0,
-  "total_cost": 0.1180188,
+  "end": 1781773226.9,
+  "duration": 26.90000009536743,
+  "total_cost": 0.1640178,
   "token_totals": {
-    "input": 2160,
-    "output": 2472,
-    "cache_read": 200196,
-    "cache_write": 3840
+    "input": 2700,
+    "output": 3360,
+    "cache_read": 291726,
+    "cache_write": 4800
   },
   "phase_counts": {
-    "explore": 6,
-    "execute": 6,
+    "explore": 7,
+    "execute": 8,
     "other": 0
   },
   "tool_breakdown": [
     {
       "name": "Bash",
-      "count": 6,
-      "duration": 13.000000238418579,
+      "count": 8,
+      "duration": 16.200000286102295,
       "errors": 2
     },
     {
       "name": "Read",
       "count": 3,
-      "duration": 0.5999996662139893,
+      "duration": 0.6000001430511475,
       "errors": 0
     },
     {
@@ -42,7 +42,13 @@
     {
       "name": "Grep",
       "count": 1,
-      "duration": 0.3000001907348633,
+      "duration": 0.2999999523162842,
+      "errors": 0
+    },
+    {
+      "name": "WebFetch",
+      "count": 1,
+      "duration": 1.1999998092651367,
       "errors": 0
     }
   ],
@@ -83,6 +89,49 @@
       "writes": 1
     }
   ],
+  "network_activity": {
+    "total": 3,
+    "by_kind": [
+      {
+        "kind": "git",
+        "count": 1
+      },
+      {
+        "kind": "package",
+        "count": 1
+      },
+      {
+        "kind": "http",
+        "count": 1
+      }
+    ],
+    "requests": [
+      {
+        "index": 1,
+        "turn": 1,
+        "tool": "Bash",
+        "kind": "git",
+        "target": "origin",
+        "error": false
+      },
+      {
+        "index": 6,
+        "turn": 6,
+        "tool": "Bash",
+        "kind": "package",
+        "target": "pip install pytest-mock",
+        "error": false
+      },
+      {
+        "index": 7,
+        "turn": 7,
+        "tool": "WebFetch",
+        "kind": "http",
+        "target": "docs.pytest.org/en/stable/how-to/monkeypatch.html",
+        "error": false
+      }
+    ]
+  },
   "file_graph": {
     "window": 4,
     "nodes": [
@@ -186,10 +235,10 @@
     ]
   },
   "phase_crossover": {
-    "index": 4,
+    "index": 5,
     "pos": 0.333,
-    "purity": 0.833,
-    "n": 12
+    "purity": 0.733,
+    "n": 15
   },
   "retry_loops": [
     {
@@ -197,13 +246,13 @@
       "target": "python -m pytest -q",
       "attempts": 3,
       "errors": 2,
-      "first_index": 4,
-      "last_index": 9,
-      "span_s": 11.200000047683716
+      "first_index": 5,
+      "last_index": 12,
+      "span_s": 15.700000047683716
     }
   ],
-  "n_tool_calls": 12,
-  "n_turns": 12,
+  "n_tool_calls": 15,
+  "n_turns": 15,
   "n_errors": 2,
   "user_prompts": [
     "Fix the failing test in the parser package."
@@ -222,17 +271,39 @@
       "files": [],
       "file_modes": {},
       "output_chars": 43,
-      "turn": 0
+      "turn": 0,
+      "network": []
     },
     {
       "index": 1,
       "id": "toolu_demo_001",
+      "name": "Bash",
+      "label": "git fetch origin && git log --oneline -5",
+      "phase": "execute",
+      "start": 1781773201.9,
+      "end": 1781773202.8,
+      "duration": 0.8999998569488525,
+      "is_error": false,
+      "files": [],
+      "file_modes": {},
+      "output_chars": 43,
+      "turn": 1,
+      "network": [
+        {
+          "kind": "git",
+          "target": "origin"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "id": "toolu_demo_002",
       "name": "Read",
       "label": "tests/test_parser.py",
       "phase": "explore",
-      "start": 1781773201.9,
-      "end": 1781773202.1,
-      "duration": 0.19999980926513672,
+      "start": 1781773203.3,
+      "end": 1781773203.5,
+      "duration": 0.20000004768371582,
       "is_error": false,
       "files": [
         "tests/test_parser.py"
@@ -241,17 +312,18 @@
         "tests/test_parser.py": "read"
       },
       "output_chars": 43,
-      "turn": 1
+      "turn": 2,
+      "network": []
     },
     {
-      "index": 2,
-      "id": "toolu_demo_002",
+      "index": 3,
+      "id": "toolu_demo_003",
       "name": "Grep",
       "label": "src",
       "phase": "explore",
-      "start": 1781773202.6,
-      "end": 1781773202.9,
-      "duration": 0.3000001907348633,
+      "start": 1781773204.0,
+      "end": 1781773204.3,
+      "duration": 0.2999999523162842,
       "is_error": false,
       "files": [
         "src"
@@ -260,17 +332,18 @@
         "src": "read"
       },
       "output_chars": 43,
-      "turn": 2
+      "turn": 3,
+      "network": []
     },
     {
-      "index": 3,
-      "id": "toolu_demo_003",
+      "index": 4,
+      "id": "toolu_demo_004",
       "name": "Read",
       "label": "src/parser.py",
       "phase": "explore",
-      "start": 1781773203.4,
-      "end": 1781773203.6,
-      "duration": 0.19999980926513672,
+      "start": 1781773204.8,
+      "end": 1781773205.0,
+      "duration": 0.20000004768371582,
       "is_error": false,
       "files": [
         "src/parser.py"
@@ -279,31 +352,75 @@
         "src/parser.py": "read"
       },
       "output_chars": 43,
-      "turn": 3
-    },
-    {
-      "index": 4,
-      "id": "toolu_demo_004",
-      "name": "Bash",
-      "label": "python -m pytest -q",
-      "phase": "execute",
-      "start": 1781773204.1,
-      "end": 1781773208.2,
-      "duration": 4.1000001430511475,
-      "is_error": true,
-      "files": [],
-      "file_modes": {},
-      "output_chars": 244,
-      "turn": 4
+      "turn": 4,
+      "network": []
     },
     {
       "index": 5,
       "id": "toolu_demo_005",
+      "name": "Bash",
+      "label": "python -m pytest -q",
+      "phase": "execute",
+      "start": 1781773205.5,
+      "end": 1781773209.6,
+      "duration": 4.099999904632568,
+      "is_error": true,
+      "files": [],
+      "file_modes": {},
+      "output_chars": 244,
+      "turn": 5,
+      "network": []
+    },
+    {
+      "index": 6,
+      "id": "toolu_demo_006",
+      "name": "Bash",
+      "label": "pip install pytest-mock",
+      "phase": "execute",
+      "start": 1781773210.1,
+      "end": 1781773212.4,
+      "duration": 2.3000001907348633,
+      "is_error": false,
+      "files": [],
+      "file_modes": {},
+      "output_chars": 43,
+      "turn": 6,
+      "network": [
+        {
+          "kind": "package",
+          "target": "pip install pytest-mock"
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "id": "toolu_demo_007",
+      "name": "WebFetch",
+      "label": "https://docs.pytest.org/en/stable/how-to/monkeypatch.html",
+      "phase": "explore",
+      "start": 1781773212.9,
+      "end": 1781773214.1,
+      "duration": 1.1999998092651367,
+      "is_error": false,
+      "files": [],
+      "file_modes": {},
+      "output_chars": 43,
+      "turn": 7,
+      "network": [
+        {
+          "kind": "http",
+          "target": "docs.pytest.org/en/stable/how-to/monkeypatch.html"
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "id": "toolu_demo_008",
       "name": "Read",
       "label": "src/normalize.py",
       "phase": "explore",
-      "start": 1781773208.7,
-      "end": 1781773208.9,
+      "start": 1781773214.6,
+      "end": 1781773214.8,
       "duration": 0.20000004768371582,
       "is_error": false,
       "files": [
@@ -313,85 +430,90 @@
         "src/normalize.py": "read"
       },
       "output_chars": 43,
-      "turn": 5
-    },
-    {
-      "index": 6,
-      "id": "toolu_demo_006",
-      "name": "Edit",
-      "label": "src/normalize.py",
-      "phase": "execute",
-      "start": 1781773209.4,
-      "end": 1781773209.7,
-      "duration": 0.2999999523162842,
-      "is_error": false,
-      "files": [
-        "src/normalize.py"
-      ],
-      "file_modes": {
-        "src/normalize.py": "write"
-      },
-      "output_chars": 43,
-      "turn": 6
-    },
-    {
-      "index": 7,
-      "id": "toolu_demo_007",
-      "name": "Bash",
-      "label": "python -m pytest -q",
-      "phase": "execute",
-      "start": 1781773210.2,
-      "end": 1781773214.0,
-      "duration": 3.799999952316284,
-      "is_error": true,
-      "files": [],
-      "file_modes": {},
-      "output_chars": 244,
-      "turn": 7
-    },
-    {
-      "index": 8,
-      "id": "toolu_demo_008",
-      "name": "Edit",
-      "label": "src/normalize.py",
-      "phase": "execute",
-      "start": 1781773214.5,
-      "end": 1781773214.8,
-      "duration": 0.2999999523162842,
-      "is_error": false,
-      "files": [
-        "src/normalize.py"
-      ],
-      "file_modes": {
-        "src/normalize.py": "write"
-      },
-      "output_chars": 43,
-      "turn": 8
+      "turn": 8,
+      "network": []
     },
     {
       "index": 9,
       "id": "toolu_demo_009",
-      "name": "Bash",
-      "label": "python -m pytest -q",
+      "name": "Edit",
+      "label": "src/normalize.py",
       "phase": "execute",
       "start": 1781773215.3,
-      "end": 1781773219.2,
-      "duration": 3.9000000953674316,
+      "end": 1781773215.6,
+      "duration": 0.2999999523162842,
       "is_error": false,
-      "files": [],
-      "file_modes": {},
+      "files": [
+        "src/normalize.py"
+      ],
+      "file_modes": {
+        "src/normalize.py": "write"
+      },
       "output_chars": 43,
-      "turn": 9
+      "turn": 9,
+      "network": []
     },
     {
       "index": 10,
       "id": "toolu_demo_010",
       "name": "Bash",
+      "label": "python -m pytest -q",
+      "phase": "execute",
+      "start": 1781773216.1,
+      "end": 1781773219.9,
+      "duration": 3.8000001907348633,
+      "is_error": true,
+      "files": [],
+      "file_modes": {},
+      "output_chars": 244,
+      "turn": 10,
+      "network": []
+    },
+    {
+      "index": 11,
+      "id": "toolu_demo_011",
+      "name": "Edit",
+      "label": "src/normalize.py",
+      "phase": "execute",
+      "start": 1781773220.4,
+      "end": 1781773220.7,
+      "duration": 0.2999999523162842,
+      "is_error": false,
+      "files": [
+        "src/normalize.py"
+      ],
+      "file_modes": {
+        "src/normalize.py": "write"
+      },
+      "output_chars": 43,
+      "turn": 11,
+      "network": []
+    },
+    {
+      "index": 12,
+      "id": "toolu_demo_012",
+      "name": "Bash",
+      "label": "python -m pytest -q",
+      "phase": "execute",
+      "start": 1781773221.2,
+      "end": 1781773225.1,
+      "duration": 3.8999998569488525,
+      "is_error": false,
+      "files": [],
+      "file_modes": {},
+      "output_chars": 43,
+      "turn": 12,
+      "network": []
+    },
+    {
+      "index": 13,
+      "id": "toolu_demo_013",
+      "name": "Bash",
       "label": "python scripts/gen_fixture.py > tests/fixtures/expected.json",
       "phase": "execute",
-      "start": 1781773219.7,
-      "end": 1781773220.3,
-      "duration": 0.5999999046325684,
+      "start": 1781773225.6,
+      "end": 1781773226.2,
+      "duration": 0.6000001430511475,
       "is_error": false,
       "files": [
         "tests/fixtures/expected.json",
@@ -402,16 +524,17 @@
         "scripts/gen_fixture.py": "read"
       },
       "output_chars": 43,
-      "turn": 10
+      "turn": 13,
+      "network": []
     },
     {
-      "index": 11,
-      "id": "toolu_demo_011",
+      "index": 14,
+      "id": "toolu_demo_014",
       "name": "Bash",
       "label": "cat > CHANGELOG.md << 'EOF' - fix normalize() EOF",
       "phase": "explore",
-      "start": 1781773220.8,
-      "end": 1781773221.0,
+      "start": 1781773226.7,
+      "end": 1781773226.9,
       "duration": 0.20000004768371582,
       "is_error": false,
       "files": [
@@ -421,7 +544,8 @@
         "CHANGELOG.md": "write"
       },
       "output_chars": 43,
-      "turn": 11
+      "turn": 14,
+      "network": []
     }
   ],
   "turns": [
@@ -442,86 +566,86 @@
       "timestamp": 1781773201.9,
       "input_tokens": 180,
       "output_tokens": 152,
-      "cache_read_tokens": 9294,
+      "cache_read_tokens": 9486,
       "cache_write_tokens": 320,
-      "cost_usd": 0.0068081999999999995,
+      "cost_usd": 0.006865799999999999,
       "n_tool_calls": 1
     },
     {
       "index": 2,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773202.6,
+      "timestamp": 1781773203.3,
       "input_tokens": 180,
       "output_tokens": 164,
-      "cache_read_tokens": 10923,
+      "cache_read_tokens": 11097,
       "cache_write_tokens": 320,
-      "cost_usd": 0.0074769,
+      "cost_usd": 0.0075291,
       "n_tool_calls": 1
     },
     {
       "index": 3,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773203.4,
+      "timestamp": 1781773204.0,
       "input_tokens": 180,
       "output_tokens": 176,
-      "cache_read_tokens": 12513,
+      "cache_read_tokens": 12726,
       "cache_write_tokens": 320,
-      "cost_usd": 0.0081339,
+      "cost_usd": 0.0081978,
       "n_tool_calls": 1
     },
     {
       "index": 4,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773204.1,
+      "timestamp": 1781773204.8,
       "input_tokens": 180,
       "output_tokens": 188,
-      "cache_read_tokens": 14199,
+      "cache_read_tokens": 14316,
       "cache_write_tokens": 320,
-      "cost_usd": 0.008819700000000001,
+      "cost_usd": 0.0088548,
       "n_tool_calls": 1
     },
     {
       "index": 5,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773208.7,
+      "timestamp": 1781773205.5,
       "input_tokens": 180,
       "output_tokens": 200,
-      "cache_read_tokens": 15798,
+      "cache_read_tokens": 16002,
       "cache_write_tokens": 320,
-      "cost_usd": 0.009479399999999999,
+      "cost_usd": 0.009540599999999998,
       "n_tool_calls": 1
     },
     {
       "index": 6,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773209.4,
+      "timestamp": 1781773210.1,
       "input_tokens": 180,
       "output_tokens": 212,
-      "cache_read_tokens": 17397,
+      "cache_read_tokens": 17745,
       "cache_write_tokens": 320,
-      "cost_usd": 0.010139099999999998,
+      "cost_usd": 0.0102435,
       "n_tool_calls": 1
     },
     {
       "index": 7,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773210.2,
+      "timestamp": 1781773212.9,
       "input_tokens": 180,
       "output_tokens": 224,
-      "cache_read_tokens": 19089,
+      "cache_read_tokens": 19560,
       "cache_write_tokens": 320,
-      "cost_usd": 0.0108267,
+      "cost_usd": 0.010968,
       "n_tool_calls": 1
     },
     {
       "index": 8,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773214.5,
+      "timestamp": 1781773214.6,
       "input_tokens": 180,
       "output_tokens": 236,
-      "cache_read_tokens": 20688,
+      "cache_read_tokens": 21159,
       "cache_write_tokens": 320,
-      "cost_usd": 0.011486399999999999,
+      "cost_usd": 0.011627700000000001,
       "n_tool_calls": 1
     },
     {
@@ -530,31 +654,64 @@
       "timestamp": 1781773215.3,
       "input_tokens": 180,
       "output_tokens": 248,
-      "cache_read_tokens": 22380,
+      "cache_read_tokens": 22758,
       "cache_write_tokens": 320,
-      "cost_usd": 0.012174,
+      "cost_usd": 0.0122874,
       "n_tool_calls": 1
     },
     {
       "index": 10,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773219.7,
+      "timestamp": 1781773216.1,
       "input_tokens": 180,
       "output_tokens": 260,
-      "cache_read_tokens": 24216,
+      "cache_read_tokens": 24450,
       "cache_write_tokens": 320,
-      "cost_usd": 0.0129048,
+      "cost_usd": 0.012975,
       "n_tool_calls": 1
     },
     {
       "index": 11,
       "model": "claude-sonnet-4-6",
-      "timestamp": 1781773220.8,
+      "timestamp": 1781773220.4,
       "input_tokens": 180,
       "output_tokens": 272,
-      "cache_read_tokens": 26016,
+      "cache_read_tokens": 26049,
       "cache_write_tokens": 320,
-      "cost_usd": 0.0136248,
+      "cost_usd": 0.013634700000000001,
+      "n_tool_calls": 1
+    },
+    {
+      "index": 12,
+      "model": "claude-sonnet-4-6",
+      "timestamp": 1781773221.2,
+      "input_tokens": 180,
+      "output_tokens": 284,
+      "cache_read_tokens": 27741,
+      "cache_write_tokens": 320,
+      "cost_usd": 0.0143223,
+      "n_tool_calls": 1
+    },
+    {
+      "index": 13,
+      "model": "claude-sonnet-4-6",
+      "timestamp": 1781773225.6,
+      "input_tokens": 180,
+      "output_tokens": 296,
+      "cache_read_tokens": 29577,
+      "cache_write_tokens": 320,
+      "cost_usd": 0.0150531,
+      "n_tool_calls": 1
+    },
+    {
+      "index": 14,
+      "model": "claude-sonnet-4-6",
+      "timestamp": 1781773226.7,
+      "input_tokens": 180,
+      "output_tokens": 308,
+      "cache_read_tokens": 31377,
+      "cache_write_tokens": 320,
+      "cost_usd": 0.0157731,
       "n_tool_calls": 1
     }
   ]

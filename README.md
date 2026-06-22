@@ -34,10 +34,13 @@ That paper studied ReAct-style agents on Gemma/Qwen. This tool measures the same
 characteristics for a *real* production agent (Claude Code) so we can see how
 well those findings transfer before doing any optimization work.
 
-📊 **First results:** see [`FINDINGS.md`](FINDINGS.md) — across 5 benchmark runs,
-KV-cache reuse holds universally (≥94% of context reused per turn), but the
-explore→execute phase shift is *task-dependent*: clean for search/refactor,
-an interleaved loop for debugging.
+📊 **First results:** see [`FINDINGS.md`](FINDINGS.md) — across 13 benchmark runs,
+KV-cache reuse holds universally (≥94% of context reused per turn). The
+explore→execute phase shift turns out to be a **task-kind × difficulty
+interaction**: refactoring stays cleanly front-loaded at *any* length, and short
+debugging is clean too, but *long* debugging dissolves into an interleaved
+explore/act loop — so neither task type alone nor length alone predicts the
+regime. Decode-intensity, separately, scales with task effort regardless of type.
 
 ## What it measures
 
@@ -106,10 +109,14 @@ file search / refactor  15     27     75      2.24   0.80   0.48  0.98    Bash
 coding bug fix          34     60     606     9.20   0.41   0.09  1.00    Bash
 ```
 
-`sep` = mean execute position − mean explore position over the run. A high `sep`
-is a clean **explore→execute phase shift** (search/refactor); a `sep` near zero
-means explore and execute **interleave** in a reproduce→fix→test loop (debugging).
-That is: the paper's clean phase shift holds for some task types but not all.
+`sep` = mean execute position − mean explore position over the run (the related
+`purity` metric measures the same thing more robustly). A high value is a clean
+**explore→execute phase shift**; a value near zero means explore and execute
+**interleave** in a reproduce→fix→test loop. Which one you get is an interaction
+of task type *and* difficulty: refactoring stays front-loaded at any length, and
+short debugging is clean, but *long* debugging interleaves (see
+[`FINDINGS.md`](FINDINGS.md)). The paper's clean phase shift is the rule — it
+breaks down specifically for long, iterative debugging.
 
 ### Profile a run live (in-flight)
 

@@ -88,7 +88,10 @@ def summarize(d: dict) -> dict[str, Any]:
                                  tt.get("output", 0))
     tb = d.get("tool_breakdown", []) or []
     xover = d.get("phase_crossover", {}) or {}
+    na = d.get("network_activity", {}) or {}
     return {
+        "net_total": na.get("total", 0),
+        "net_kinds": na.get("by_kind", []) or [],
         "crossover_pos": xover.get("pos"),
         "purity": xover.get("purity"),
         "crossover_index": xover.get("index"),
@@ -131,6 +134,7 @@ def render_text(rows: list[dict]) -> str:
         ("sep", None, lambda r: _fmt(r["separation"])),
         ("pure", None, lambda r: _fmt(r["purity"])),
         ("cache%", None, lambda r: _fmt(r["cache_read_share"])),
+        ("net", None, lambda r: r["net_total"] or "—"),
         ("top tool", None, lambda r: r["top_tool"] or "—"),
     ]
     head = [c[0] for c in cols]
@@ -243,7 +247,7 @@ document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':
   const cols=[['run','label'],['calls','n_tool_calls'],['turns','n_turns'],
     ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],['loops','n_retry_loops'],
     ['expl%','explore_share'],['sep','separation'],['pure','purity'],
-    ['cache%','cache_read_share'],['top tool','top_tool']];
+    ['cache%','cache_read_share'],['net','net_total'],['top tool','top_tool']];
   let s=`<tr>${cols.map(([h],i)=>`<th class="${i?'num':''}">${h}</th>`).join('')}</tr>`;
   s+=R.map(r=>`<tr>${cols.map(([h,k],i)=>{
     let v=r[k];

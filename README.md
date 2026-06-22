@@ -1,197 +1,176 @@
 # Claude Code Trace Visualizer
 
-A small **workload profiler** for [Claude Code](https://claude.com/claude-code).
-It answers one question:
+**See exactly what Claude Code did on a task** — every tool call, in order, with
+timing, tokens, dollars, network requests, and where it got stuck.
 
-> When Claude Code runs on a task, what exactly does it do, in what order, how
-> long does each step take, how many tokens/dollars does it burn, and where does
-> it fail or retry?
+Point it at a session and it renders one **self-contained, offline HTML
+dashboard**: a timeline of tool calls, a read/explore → execute/write phase view,
+per-turn token & context growth, a tool-call breakdown, a file-access table, a
+**network-activity** panel, a file co-access graph, detected retry loops, and an
+errors list. No instrumentation, no services, no dependencies — it just reads the
+transcript Claude Code already writes.
 
-It parses a Claude Code session transcript and renders a **self-contained,
-offline HTML dashboard**: a timeline of tool calls, a read/explore → execute/write
-phase view, per-turn token & context growth, a tool-call breakdown, a file-access
-table, a file co-access graph, detected retry loops, and an errors/retries list.
+---
 
-👉 Open [`examples/example-report.html`](examples/example-report.html) in a
-browser to see a sample report. Regenerate it any time with
-`python examples/make_sample.py && python -m cc_trace examples/sample-session.jsonl -o examples/example-report.html`.
+## Quick start (about 60 seconds)
 
-## Why
-
-This is the measurement layer for a summer research direction on **agentic AI
-workload characterization** (with Shawn Zhong / Caeden Whitaker, UW–Madison).
-It's directly motivated by *Agentic AI Workload Characteristics* (Yuan, Nayak,
-Kundu, Talati, 2026), which finds that agentic workloads:
-
-- are **decode-dominated** and reuse most input tokens across turns via
-  **KV-cache** state (context grows over the run);
-- move through **distinct temporal phases** — *read/explore* early, then
-  *execute/write* later;
-- need serving systems that jointly handle model re-entry, persistent context,
-  and **workload-dependent tool behavior**.
-
-That paper studied ReAct-style agents on Gemma/Qwen. This tool measures the same
-characteristics for a *real* production agent (Claude Code) so we can see how
-well those findings transfer before doing any optimization work.
-
-📊 **First results:** see [`FINDINGS.md`](FINDINGS.md) — across 13 benchmark runs,
-KV-cache reuse holds universally (≥94% of context reused per turn). The
-explore→execute phase shift turns out to be a **task-kind × difficulty
-interaction**: refactoring stays cleanly front-loaded at *any* length, and short
-debugging is clean too, but *long* debugging dissolves into an interleaved
-explore/act loop — so neither task type alone nor length alone predicts the
-regime. Decode-intensity, separately, scales with task effort regardless of type.
-
-## What it measures
-
-Per session, extracted straight from the transcript (no instrumentation needed):
-
-| Signal | Source |
-| --- | --- |
-| Tool calls, order, arguments | `assistant` → `tool_use` blocks |
-| Per-call duration | `tool_result` timestamp − `tool_use` timestamp |
-| Success / failure (retry candidates) | `tool_result.is_error` |
-| Files touched (read vs. write) | tool input `file_path`, **plus shell redirects / here-docs / `tee` / script runs parsed from Bash commands** |
-| **Network activity** (curl/wget, git remote ops, package installs, ssh/scp, WebFetch/WebSearch/MCP) | **parsed from Bash command strings + the web/MCP tool inputs** |
-| Tokens: input / output / cache-read / cache-write | `message.usage` per turn |
-| Context growth | cumulative cache-read + input per turn |
-| Estimated cost (USD) | usage × per-model price table |
-| Phase (explore vs. execute) | tool name + read-only shell heuristic |
-
-Bash calls are sub-classified: read-only commands (`ls`, `grep`, `git status`,
-…) count as *explore*; mutating ones count as *execute*. File I/O done through the
-shell — output redirects (`>`, `>>`), here-docs, `tee`, and reading/running a
-script — is parsed out of the command string so `file_access` isn't under-counted
-(agents lean on Bash over the Write/Edit tools).
-
-The **network panel** is built the same way: the agent reaches the network mostly
-through the shell (`curl`/`wget`, `git clone`/`fetch`/`push`, `pip`/`npm`/`uv`
-installs, `ssh`/`scp`), plus the `WebFetch`/`WebSearch`/MCP tools — all parsed
-from command strings and tool inputs. Note this captures the network the **agent**
-initiates; it does *not* include Claude Code's own model-API calls, which never
-appear in the transcript (seeing those would need a proxy in front of the CLI).
-
-## Install
-
-No dependencies — Python 3.9+ standard library only.
+No dependencies — **Python 3.9+ standard library only**.
 
 ```bash
 git clone https://github.com/fairozkhan10/claude-code-trace-visualizer
 cd claude-code-trace-visualizer
-# optional: pip install -e .   # gives you a `cc-trace` command
+
+# 1. see a sample dashboard (synthetic data, safe to open)
+open examples/example-report.html          # macOS  (Linux: xdg-open)
+
+# 2. profile your most recent real Claude Code session
+python3 -m cc_trace --latest --open
 ```
 
-## Usage
+That's it. Step 2 finds your latest session under `~/.claude/projects/`, profiles
+it, and pops the report open in your browser.
+
+> On systems where `python` already means Python 3, you can drop the `3`. If you
+> prefer a short command, `pip install -e .` gives you a `cc-trace` binary.
+
+---
+
+## Everyday usage
 
 ```bash
-# profile the most recent Claude Code session
-python -m cc_trace --latest --open
+# list the sessions available to profile (newest first)
+python3 -m cc_trace --list
 
-# list available sessions
-python -m cc_trace --list
-
-# profile a specific transcript or session id, also dump the parsed JSON
-python -m cc_trace 20814a75 -o reports/run.html --json
+# profile a specific session (by id prefix) or a transcript path,
+# and also dump the parsed data as JSON for your own analysis
+python3 -m cc_trace 20814a75 -o reports/run.html --json --open
 ```
 
-Transcripts live at `~/.claude/projects/<project>/<session>.jsonl`; this tool
-reads them read-only.
+Transcripts live at `~/.claude/projects/<project>/<session>.jsonl`. The tool only
+ever **reads** them.
 
-### Compare runs
+### Compare several runs
 
-Once you've profiled a few tasks (each `--json` dump, or just their transcripts),
-roll them up into one cross-run comparison:
+Profiled a few tasks? Roll them into one cross-run table:
 
 ```bash
-python -m cc_trace compare reports/*.json -o reports/compare.html
+python3 -m cc_trace compare reports/*.json -o reports/compare.html
 ```
 
-It prints a comparison table and writes an HTML rollup with, per run, the
-phase mix, the **explore→execute separation** (`sep`), the tool mix, and the
-**cache-read share** (the KV-cache-reuse / decode-dominated signal):
+You get one row per run with its phase mix, the **explore→execute separation**
+(`sep`) and **`purity`**, cache-reuse %, network-request count, and top tool:
 
 ```
-run                     calls  turns  dur(s)  cost$  expl%  sep   cache%  top tool
-data task               3      7      48      0.68   0.67   0.75  0.94    Bash
-file search / refactor  15     27     75      2.24   0.80   0.48  0.98    Bash
-coding bug fix          34     60     606     9.20   0.41   0.09  1.00    Bash
+run                     calls  dur(s)  cost$  sep   pure  cache%  net  top tool
+file search / refactor  15     75      2.24   0.48  0.93  0.98    —    Bash
+coding bug fix          34     606     9.20   0.09  0.70  1.00    2    Bash
 ```
 
-`sep` = mean execute position − mean explore position over the run (the related
-`purity` metric measures the same thing more robustly). A high value is a clean
-**explore→execute phase shift**; a value near zero means explore and execute
-**interleave** in a reproduce→fix→test loop. Which one you get is an interaction
-of task type *and* difficulty: refactoring stays front-loaded at any length, and
-short debugging is clean, but *long* debugging interleaves (see
-[`FINDINGS.md`](FINDINGS.md)). The paper's clean phase shift is the rule — it
-breaks down specifically for long, iterative debugging.
+`sep` (and the more robust `purity`) measure phase structure: **high = a clean
+"explore first, then execute" shift; near zero = explore and execute interleave**
+in a reproduce→fix→test loop. Which one you see depends on *task type × difficulty*
+— see [`FINDINGS.md`](FINDINGS.md).
 
-### Profile a run live (in-flight)
+### Watch a run live (in-flight)
 
-Instead of profiling a saved transcript after the fact, watch a run as it happens
-via Claude Code's streaming output. Either let the tool launch it:
+Profile a run *as it happens* instead of after the fact:
 
 ```bash
-python -m cc_trace live "fix the failing test in foo.py" -o reports/live.html
+# let the tool launch Claude Code for you
+python3 -m cc_trace live "fix the failing test in foo.py" -o reports/live.html
+
+# …or pipe an existing stream-json run into it
+claude -p "…" --output-format stream-json --verbose | python3 -m cc_trace live -
 ```
 
-or pipe an existing stream-json run into it:
+Each tool call prints as it streams; the HTML is written when the run ends.
+(Stream events carry no transcript timestamp, so durations are measured from event
+**arrival** time.)
 
-```bash
-claude -p "…" --output-format stream-json --verbose | python -m cc_trace live -
-```
-
-Each tool call prints as it streams in; the HTML report is written when the run
-ends. Because stream events have no transcript timestamp, durations are measured
-from event **arrival** time.
-
-### Run a fresh benchmark task and profile it
+### Run a fresh benchmark and profile it
 
 ```bash
 scripts/profile_task.sh --prompt-file tasks/01-bugfix.md
 ```
 
-This runs Claude Code headless (`claude -p`) on a task, then profiles the trace.
-See [`tasks/`](tasks/) for the fixed benchmark prompts (bug fix, search/refactor,
-data task) used to keep runs comparable.
+Runs Claude Code headless (`claude -p`) on a fixed prompt, then profiles the
+result. See [`tasks/`](tasks/) for the benchmark prompts used to keep runs
+comparable.
 
-## Output
+---
 
-- **`<session>.html`** — the interactive dashboard (open straight from disk).
-- **`<session>.json`** (with `--json`) — the parsed trace + all derived summaries,
-  for further analysis in a notebook.
+## What it measures
 
-## Project layout
+Everything below is pulled straight from the transcript — nothing is instrumented:
+
+| Signal | Where it comes from |
+| --- | --- |
+| Tool calls — order & arguments | `assistant` → `tool_use` blocks |
+| Per-call duration | `tool_result` time − `tool_use` time |
+| Success / failure (retry candidates) | `tool_result.is_error` |
+| Files touched (read vs. write) | tool `file_path` **+ shell redirects / here-docs / `tee` / script runs parsed from Bash** |
+| **Network activity** | curl/wget, git remote ops, package installs, ssh/scp, WebFetch/WebSearch/MCP — parsed from commands & tool inputs |
+| Tokens (input / output / cache-read / cache-write) | `message.usage` per turn |
+| Context growth | cumulative cache-read + input per turn |
+| Estimated cost (USD) | usage × per-model price table |
+| Phase (explore vs. execute) | tool name + read-only-shell heuristic |
+
+Two things are worth knowing about the heuristics:
+
+- **Bash is treated as a first-class citizen.** Read-only commands (`ls`, `grep`,
+  `git status`, …) count as *explore*; mutating ones as *execute*. File I/O done
+  through the shell (redirects, here-docs, `tee`, running a script) is parsed out
+  of the command string, because agents lean on Bash far more than Read/Edit/Write.
+- **The network panel sees what the *agent* does, not the model.** It captures the
+  network the agent reaches through its tools (curl, git, pip/npm/uv, ssh, web/MCP).
+  It does **not** include Claude Code's own model-API calls — those never appear in
+  the transcript (you'd need a proxy in front of the CLI to see them).
+
+---
+
+## Why this exists
+
+This is the **measurement layer** for a summer research direction on *agentic AI
+workload characterization* (with Shawn Zhong & Caeden Whitaker, UW–Madison),
+motivated by *Agentic AI Workload Characteristics* (Yuan, Nayak, Kundu, Talati,
+2026). That paper says agentic workloads are **decode-dominated**,
+**KV-cache-heavy**, and move through **explore-then-execute phases** — but it
+studied ReAct agents on Gemma/Qwen. This tool checks whether those claims hold for
+a *real* production agent (Claude Code) before anyone optimizes for them.
+
+📊 **Short version of what we found** (full write-up in [`FINDINGS.md`](FINDINGS.md)):
+KV-cache reuse holds universally (≥94% of context reused per turn), but the
+explore→execute phase shift is a **task-kind × difficulty interaction** —
+refactoring stays cleanly front-loaded at any length, short debugging is clean too,
+and only *long* debugging dissolves into an interleaved loop.
+
+---
+
+## Output & layout
+
+Each run writes a `<session>.html` dashboard (open straight from disk) and,
+with `--json`, a `<session>.json` of the parsed trace + all derived summaries for
+notebook analysis.
 
 ```
 cc_trace/
-  parser.py    # transcript JSONL -> structured Trace (tool calls, turns, tokens)
+  parser.py    # transcript JSONL → structured Trace (tool calls, turns, tokens, network)
   cost.py      # per-model USD price table + per-turn cost
-  report.py    # Trace -> self-contained HTML dashboard (inline SVG/JS)
-  compare.py   # cross-run rollup: phase shift, tool mix, cache share
-  stream.py    # live profiling from `--output-format stream-json`
-  cli.py       # `python -m cc_trace` entry point
+  report.py    # Trace → self-contained HTML dashboard (inline SVG/JS)
+  compare.py   # cross-run rollup: phase shift, tool mix, cache share, network
+  stream.py    # live profiling from --output-format stream-json
+  cli.py       # `python3 -m cc_trace` entry point
 scripts/profile_task.sh   # run a task headless, then profile it
 tasks/                    # fixed benchmark prompts
 examples/                 # a committed example report + json
 ```
 
-## Roadmap
-
-- [x] Aggregate **across** sessions/tasks/models for comparison charts (`compare`)
-- [x] Track files touched via **Bash** redirects (`>`, heredocs, `tee`, script
-      runs), not just Read/Edit/Write inputs — agents lean on Bash
-- [x] File-access **graph** (which files co-occur in a run)
-- [x] Detect retry **loops** (same tool+target failing repeatedly)
-- [x] Phase-transition metric — explore→execute **crossover** point + a `purity`
-      score for how cleanly the run splits into the two phases
-- [x] Parse `--output-format stream-json` live for in-flight profiling (`live`)
-
 ## Notes & limitations
 
-- Durations are wall-clock between a tool call and its result; they include any
-  queuing/permission wait, not just tool execution.
-- Cost numbers are **estimates** from list prices in `cc_trace/cost.py` — edit
-  that table to match current/your rates.
-- Token usage may double-count if the transcript records per-iteration `usage`;
-  treat totals as indicative.
+- **Durations are wall-clock** between a tool call and its result — they include
+  any queue/permission wait, not just execution time.
+- **Costs are estimates** from list prices in `cc_trace/cost.py`; edit that table
+  for current or your own rates.
+- **Heuristic parsing.** File I/O inside an inline `python -c` / `node -e` script,
+  and `sed -i` in-place edits, aren't counted; token totals can double-count if the
+  transcript records per-iteration `usage`. Treat totals as indicative.

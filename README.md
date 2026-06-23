@@ -6,7 +6,9 @@ timing, tokens, dollars, network requests, and where it got stuck.
 Point it at a session and it renders one **self-contained, offline HTML
 dashboard**: a timeline of tool calls, a read/explore → execute/write phase view,
 per-turn token & context growth, a tool-call breakdown, a file-access table, a
-**network-activity** panel, a file co-access graph, detected retry loops, and an
+**network-activity** panel, a file co-access graph, detected retry loops, a
+**repeated-work** panel (identical or near-identical calls the agent re-issues — a
+caching/optimization signal), and an
 errors list. No instrumentation, no services, no dependencies — it just reads the
 transcript Claude Code already writes.
 

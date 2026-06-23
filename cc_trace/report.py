@@ -144,6 +144,16 @@ _TEMPLATE = r"""<!doctype html>
   </section>
 
   <section>
+    <h2>Repeated work</h2>
+    <p class="hint" id="repeat-summary"></p>
+    <p class="hint">Clusters of identical or <em>near-identical</em> calls — the agent
+      re-running the same test, re-reading the same file, re-issuing a slightly varied
+      command. Each is a candidate a cache/memoiser could collapse. "near" = signature
+      match after numbers/strings/paths are normalised away.</p>
+    <table id="repeats"></table>
+  </section>
+
+  <section>
     <h2>Errors &amp; retries</h2>
     <p class="hint">Tool calls that returned an error (candidate retry loops).</p>
     <table id="errors"></table>
@@ -303,6 +313,27 @@ document.getElementById('cards').innerHTML = cards.map(([k,v])=>
         `<td class="num">${fmtDur(r.span_s)}</td><td class="num">#${r.first_index}–${r.last_index}</td></tr>`).join('')
       : `<tr><td colspan="6" style="color:var(--muted)">No retry loops detected. 🎉</td></tr>`;
   document.getElementById('retries').innerHTML=s;
+})();
+
+// ---- repeated work ----
+(function(){
+  const rw=T.repeated_work||{clusters:[]}, cl=rw.clusters||[];
+  const pct=rw.redundant_frac!=null?(100*rw.redundant_frac).toFixed(0):'0';
+  document.getElementById('repeat-summary').innerHTML = cl.length
+    ? `<b>${fmtN(rw.redundant_calls)}</b> of ${fmtN(rw.n_tool_calls)} tool calls (${pct}%) `+
+      `were repeats of earlier work, across <b>${fmtN(rw.n_clusters)}</b> clusters — `+
+      `${fmtDur(rw.redundant_s)} spent on the repeat invocations.`
+    : `No repeated work detected. 🎉`;
+  let s=`<tr><th>Tool</th><th>Example</th><th class="num">calls</th><th class="num">redundant</th>`+
+        `<th class="num">kind</th><th class="num">errors</th><th class="num">time</th><th class="num">at</th></tr>`;
+  s+= cl.length? cl.map(r=>`<tr><td>${r.tool}</td>`+
+        `<td><code>${shorten((r.example||'').replace(/</g,'&lt;'))}</code></td>`+
+        `<td class="num">${r.count}</td><td class="num"><b>${r.redundant}</b></td>`+
+        `<td class="num">${r.exact?'exact':'near ('+r.distinct+')'}</td>`+
+        `<td class="num">${r.errors?'<span class="pill err">'+r.errors+'</span>':'—'}</td>`+
+        `<td class="num">${fmtDur(r.redundant_s)}</td><td class="num">#${r.first_index}–${r.last_index}</td></tr>`).join('')
+      : `<tr><td colspan="8" style="color:var(--muted)">No repeated work detected. 🎉</td></tr>`;
+  document.getElementById('repeats').innerHTML=s;
 })();
 
 // ---- errors ----

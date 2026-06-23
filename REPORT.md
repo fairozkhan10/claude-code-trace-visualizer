@@ -18,7 +18,8 @@ dashboard. One session in, one shareable HTML file out. It grew a few capabiliti
 beyond the brief along the way:
 
 - **Per-session dashboard** — timeline, phase view, token/context growth, tool
-  breakdown, file access, network panel, file co-access graph, retry loops, errors.
+  breakdown, file access, network panel, file co-access graph, retry loops,
+  repeated-work clusters (a caching/optimization signal), errors.
 - **Cross-run compare** — roll many runs into one table to spot patterns.
 - **Live mode** — profile a run in-flight from `--output-format stream-json`.
 - **Honest Bash parsing** — file *and* network I/O done through the shell (the way
@@ -35,7 +36,7 @@ Yes — every element, with one clearly-flagged exception:
 | Network requests | ✅ network panel (per-session **and** rollup) — *agent-initiated traffic* |
 | Timing | ✅ per-call duration |
 | Cost | ✅ per-turn, per-model |
-| Retries | ✅ retry-loop detection + errors list |
+| Retries | ✅ retry-loop detection + near-duplicate repeated-work clusters + errors list |
 
 **The one asterisk:** "network requests" covers traffic the *agent* initiates
 (curl/git/pip/web/MCP). It does **not** capture Claude Code's own model-API calls —

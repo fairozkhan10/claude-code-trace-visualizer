@@ -251,6 +251,41 @@
       "span_s": 15.700000047683716
     }
   ],
+  "repeated_work": {
+    "n_tool_calls": 15,
+    "n_clusters": 2,
+    "redundant_calls": 3,
+    "redundant_frac": 0.2,
+    "redundant_s": 8.0,
+    "clusters": [
+      {
+        "tool": "Bash",
+        "example": "python -m pytest -q",
+        "count": 3,
+        "redundant": 2,
+        "distinct": 1,
+        "exact": true,
+        "errors": 2,
+        "first_index": 5,
+        "last_index": 12,
+        "span_s": 15.7,
+        "redundant_s": 7.7
+      },
+      {
+        "tool": "Edit",
+        "example": "src/normalize.py",
+        "count": 2,
+        "redundant": 1,
+        "distinct": 1,
+        "exact": true,
+        "errors": 0,
+        "first_index": 9,
+        "last_index": 11,
+        "span_s": 5.1,
+        "redundant_s": 0.3
+      }
+    ]
+  },
   "n_tool_calls": 15,
   "n_turns": 15,
   "n_errors": 2,

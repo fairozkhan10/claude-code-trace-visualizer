@@ -89,7 +89,10 @@ def summarize(d: dict) -> dict[str, Any]:
     tb = d.get("tool_breakdown", []) or []
     xover = d.get("phase_crossover", {}) or {}
     na = d.get("network_activity", {}) or {}
+    rw = d.get("repeated_work", {}) or {}
     return {
+        "redundant_calls": rw.get("redundant_calls", 0),
+        "redundant_frac": rw.get("redundant_frac"),
         "net_total": na.get("total", 0),
         "net_kinds": na.get("by_kind", []) or [],
         "crossover_pos": xover.get("pos"),
@@ -130,6 +133,7 @@ def render_text(rows: list[dict]) -> str:
         ("cost$", None, lambda r: f"{r['cost']:.2f}"),
         ("err", None, lambda r: r["n_errors"]),
         ("loops", None, lambda r: r["n_retry_loops"]),
+        ("redun%", None, lambda r: _fmt(r["redundant_frac"])),
         ("expl%", None, lambda r: _fmt(r["explore_share"])),
         ("sep", None, lambda r: _fmt(r["separation"])),
         ("pure", None, lambda r: _fmt(r["purity"])),
@@ -246,6 +250,7 @@ document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':
 (function(){
   const cols=[['run','label'],['calls','n_tool_calls'],['turns','n_turns'],
     ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],['loops','n_retry_loops'],
+    ['redun%','redundant_frac'],
     ['expl%','explore_share'],['sep','separation'],['pure','purity'],
     ['cache%','cache_read_share'],['net','net_total'],['top tool','top_tool']];
   let s=`<tr>${cols.map(([h],i)=>`<th class="${i?'num':''}">${h}</th>`).join('')}</tr>`;

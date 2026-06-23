@@ -14,6 +14,7 @@ The transcript is one JSON object per line. The lines we care about:
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 from dataclasses import dataclass, field, asdict
@@ -275,6 +276,36 @@ def _label(name: str, tool_input: dict) -> str:
     return ""
 
 
+# --- Repeated-work / near-duplicate detection --------------------------------
+# Shawn's optimisation angle: an agent that re-issues the same *or similar*
+# command (re-runs the same test, re-reads the same file) is doing cacheable
+# work. retry_loops() already catches exact repeats that errored; to catch
+# *near*-duplicates we reduce each Bash call to a normalised signature —
+# numbers, quoted strings and file paths collapse to placeholders — so
+# `pytest tests/a.py` and `pytest tests/b.py` cluster together while `pytest`
+# and `git status` stay apart. A difflib pass then merges signatures that are
+# textually very close (e.g. one carries an extra `-v` flag). Non-Bash calls
+# keep their structured target (re-reading the *same* file is the repeat).
+_NUM_RE = re.compile(r"\b\d[\w.]*\b")
+_STR_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
+
+
+def _bash_signature(label: str) -> str:
+    """Normalised signature of a Bash command for near-duplicate grouping."""
+    s = _STR_RE.sub("STR", (label or "").replace("\n", " ").strip())
+    s = _NUM_RE.sub("N", s)
+    toks = ["PATH" if _is_pathish(t) else t for t in s.split()]
+    return "Bash:" + " ".join(toks)
+
+
+def _call_signature(name: str, label: str, files: list[str]) -> Optional[str]:
+    """Grouping key for repeated-work detection; ``None`` to ignore the call."""
+    if name == "Bash":
+        return _bash_signature(label)
+    target = files[0] if files else (label or "")
+    return f"{name}:{target}" if target else None
+
+
 def _parse_ts(s: Optional[str]) -> Optional[float]:
     if not s:
         return None
@@ -461,6 +492,79 @@ class Trace:
                 })
         return sorted(loops, key=lambda x: (x["errors"], x["attempts"]), reverse=True)
 
+    def repeated_work(self, min_repeats: int = 2, similarity: float = 0.9) -> dict:
+        """Repeated / near-duplicate work — the caching-opportunity signal.
+
+        Generalises :meth:`retry_loops` (which only flags repeats that *errored*)
+        to ALL repetition: re-running the same test, re-reading the same file,
+        re-issuing a slightly varied command. Bash calls are grouped by a
+        normalised signature (see :func:`_bash_signature`) and near-identical
+        signatures are then merged with a ``difflib`` ratio pass, so
+        ``pytest a.py`` and ``pytest b.py -q`` land together; non-Bash calls are
+        grouped by their structured target (re-reading the *same* file). Each
+        cluster of >= ``min_repeats`` calls is work a cache/memoiser could
+        collapse. Returns a summary (how much of the run was redundant) plus the
+        clusters, ranked by redundant count then time spent on the repeats.
+        """
+        members: dict[str, list[ToolCall]] = {}
+        for tc in self.tool_calls:
+            sig = _call_signature(tc.name, tc.label, tc.files)
+            if sig is not None:
+                members.setdefault(sig, []).append(tc)
+
+        # union-find merge of textually near-identical Bash signatures
+        bash_sigs = [s for s in members if s.startswith("Bash:")]
+        parent = {s: s for s in bash_sigs}
+
+        def find(x: str) -> str:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for i, a in enumerate(bash_sigs):
+            for b in bash_sigs[i + 1:]:
+                if find(a) != find(b) and \
+                        difflib.SequenceMatcher(None, a, b).ratio() >= similarity:
+                    parent[find(b)] = find(a)
+
+        merged: dict[str, list[ToolCall]] = {}
+        for sig, tcs in members.items():
+            merged.setdefault(find(sig) if sig in parent else sig, []).extend(tcs)
+
+        clusters = []
+        for tcs in merged.values():
+            if len(tcs) < min_repeats:
+                continue
+            tcs.sort(key=lambda t: t.index)
+            labels = [t.label or "" for t in tcs]
+            starts = [t.start for t in tcs if t.start is not None]
+            durs = [t.duration or 0.0 for t in tcs]
+            clusters.append({
+                "tool": tcs[0].name,
+                "example": min((l for l in labels if l), key=len, default=tcs[0].name),
+                "count": len(tcs),
+                "redundant": len(tcs) - 1,
+                "distinct": len(set(labels)),
+                "exact": len(set(labels)) == 1,
+                "errors": sum(1 for t in tcs if t.is_error),
+                "first_index": tcs[0].index, "last_index": tcs[-1].index,
+                "span_s": round(max(starts) - min(starts), 1) if len(starts) > 1 else 0.0,
+                "redundant_s": round(sum(durs[1:]), 1),   # time on repeat invocations
+            })
+        clusters.sort(key=lambda c: (c["redundant"], c["redundant_s"]), reverse=True)
+
+        n = len(self.tool_calls)
+        redundant = sum(c["redundant"] for c in clusters)
+        return {
+            "n_tool_calls": n,
+            "n_clusters": len(clusters),
+            "redundant_calls": redundant,
+            "redundant_frac": round(redundant / n, 3) if n else 0.0,
+            "redundant_s": round(sum(c["redundant_s"] for c in clusters), 1),
+            "clusters": clusters,
+        }
+
     def file_graph(self, window: int = 4, max_nodes: int = 24) -> dict:
         """Co-access graph: files worked on near each other in the run.
 
@@ -522,6 +626,7 @@ class Trace:
             "file_graph": self.file_graph(),
             "phase_crossover": self.phase_crossover(),
             "retry_loops": self.retry_loops(),
+            "repeated_work": self.repeated_work(),
             "n_tool_calls": len(self.tool_calls),
             "n_turns": len(self.turns),
             "n_errors": sum(1 for tc in self.tool_calls if tc.is_error),

@@ -182,6 +182,35 @@ long debugging maximizes both. *(Caveats: "decode-dominated" holds in the
 compute/latency sense — decode is memory-bound and per-token — not the token-count
 sense; and these are list-price token totals, not measured GPU time.)*
 
+### 5. How much can we trust the parser? An eBPF ground-truth check
+
+Every finding above rests on `cc_trace`'s best-effort parsing of the transcript —
+including file/network I/O scraped out of Bash *command strings*. To see how much
+that can be trusted, we ran the tool **and** [AgentSight](https://eunomia.dev/agentsight/)
+(an eBPF tracer that observes the same run at the syscall + TLS layer) on one
+identical task, and diffed them. Full write-up: [`ebpf-validation.md`](ebpf-validation.md)
+on the `ebpf-validation` branch. The short version:
+
+- **Where eBPF can keep score, the parser is exact.** On task file *writes* — the
+  one signal with clean kernel ground truth here — precision and recall were both
+  1.00: the parser reported exactly the task's output file, hallucinated nothing,
+  and correctly *omitted* the agent's internal plumbing writes (transcript,
+  MCP logs, `/dev/tty`) that eBPF over-captures.
+- **This is a pilot (n=1).** Reads and task-initiated network weren't exercised
+  (the capture surfaced writes only, and `exec` events lacked arguments), so those
+  heuristics remain unvalidated. Treat "exact" as "exact on writes, on one task."
+- **eBPF sees two things the transcript fundamentally can't** — the agent's own
+  control-plane network (8 endpoints, incl. a 3rd-party Datadog telemetry sink) and
+  the real process tree (~43 execs from ~2 Bash tool calls). Our tool and eBPF are
+  **complementary**, not competing: intent/phase/cost vs. OS-level fan-out.
+- **The decode-dominance blind spot is still open.** We hoped eBPF's TLS capture
+  would give an *independent* token count to corroborate finding 4 — it didn't.
+  `claude` statically links BoringSSL, so the SSL-read uprobe couldn't reassemble
+  the API response bodies that carry `usage` (1 of 5 calls recovered, and only the
+  Haiku title side-call). So the token/cost numbers above still rest **solely on
+  the transcript's self-report**. Closing this needs a MITM proxy
+  (`ANTHROPIC_BASE_URL` → `mitmproxy`), not uprobes — tracked separately.
+
 ## Limitations (read before citing)
 
 - **The decisive corners are n=2.** Short-debug and long-refactor are each two runs
@@ -195,6 +224,8 @@ sense; and these are list-price token totals, not measured GPU time.)*
 - **Heuristic parsing & wall-clock timing.** Bash file/network parsing is
   best-effort (inline-script I/O and `sed -i` are invisible); durations include
   queue/permission waits; costs are list-price estimates from `cc_trace/cost.py`.
+  Finding 5 spot-checks this against eBPF ground truth — exact on writes, but only
+  n=1, and token/cost figures are still the transcript's self-report.
 
 ## Reproduce
 

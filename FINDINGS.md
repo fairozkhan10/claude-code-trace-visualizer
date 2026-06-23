@@ -25,6 +25,9 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
 - **Decode-intensity scales with effort, not task type** — a long refactor is just
   as generation-heavy as a long bug-fix.
 - **Cost is driven by context size, not output** — a corollary of the cache result.
+- **Agents redo a real slice of their work** — ~16% of calls in refactoring, ~27% in
+  debugging are near-duplicate repeats (re-editing a file, re-running a probe). A
+  concrete caching/memoization target, biggest in debugging.
 
 The middle finding is the interesting one, and it took two wrong turns to get
 right (see finding 2). Below is how we got there.
@@ -221,6 +224,38 @@ on the `ebpf-validation` branch. The short version:
   Haiku title side-call). So the token/cost numbers above still rest **solely on
   the transcript's self-report**. Closing this needs a MITM proxy
   (`ANTHROPIC_BASE_URL` → `mitmproxy`), not uprobes — tracked separately.
+
+### 6. Agents redo a real fraction of their work — most in debugging
+
+Shawn's framing of the retry signal was a *systems* one: if an agent keeps issuing
+the same or near-identical operations, that's a **caching / memoization
+opportunity**. `cc_trace`'s `repeated_work()` quantifies it — it normalizes each
+Bash call to a signature (`pytest a.py -q` and `pytest b.py` collapse to one),
+unions near-identical signatures with a `difflib` ratio ≥ 0.9, and groups non-Bash
+calls by structured target (re-reading/-editing the *same file*). "Redundant" =
+every call in a cluster after the first.
+
+| group | n | redundant calls (% of all calls) | dominant repeat |
+|---|---:|---:|---|
+| refactor | 6 | mean **16%** (0–50%) | re-editing one file (`Edit ×7` in H) |
+| debugging | 6 | mean **27%** (12–48%) | re-running shell probes (`Bash`), re-editing |
+
+- **It's ubiquitous.** 11 of 13 runs repeat work; only the two shortest (A, C, ≤7
+  calls) don't. Across the suite, a meaningful slice of every nontrivial run is
+  re-tread ground a cache could absorb.
+- **Debugging repeats more than refactoring** (27% vs 16% mean) — consistent with
+  the reproduce→hypothesize→re-test loop of finding 2: debugging re-runs the same
+  failing command across hypotheses. So the optimization payoff is *largest exactly
+  where the phase shift breaks down* (the long-debug tail).
+- **But it does *not* track length** — honestly, the cleanest "redundancy rises
+  with length" story doesn't hold. The single longest run (D, 34 calls) is low at
+  12%, while mid-size G and H top the list (48–50%). The repeats are driven by
+  *task dynamics* (re-editing a file you're iterating on; re-running a probe), not
+  by run length. Treat the group means as directional (n=6 each, noisy).
+
+The two repeat mechanisms are distinct caching targets: **Edit-churn** (the same
+file edited many times — a write-back/coalescing opportunity) and **Bash-rerun**
+(the same probe issued repeatedly — a result-memoization opportunity).
 
 ## Limitations (read before citing)
 

@@ -227,3 +227,114 @@ outstanding (needs a proxy).
 - Run: `./run-both.sh "<task>" ~/boltons` (uses `/usr/bin/sudo.ws` and an
   `env HOME=…` wrapper so the traced Claude finds credentials — see script
   header for why).
+
+---
+
+# Run 2 — full op-type validation (reads + writes + network)
+
+Run 1 only scored **writes** (eBPF emitted no read events, and the task made no
+task-initiated network). Run 2 closes both gaps: a fixture task that **reads
+known files** *and* **makes a real outbound HTTPS call**, scored for
+precision/recall across **all three op types**.
+
+## Benchmark run
+
+| | |
+|---|---|
+| Repo | `~/parsertest` (fresh fixture: `src/{alpha,beta,gamma,delta}.py`, `README.md`) |
+| Task | (1) read `src/alpha.py`, `src/beta.py`, `src/gamma.py` and list each file's functions; (2) `curl -s https://raw.githubusercontent.com/mahmoud/boltons/master/LICENSE -o LICENSE.txt`; (3) write `summary.md` with the function names + first line of `LICENSE.txt`. Explicitly **not** `src/delta.py` (a decoy for read precision). |
+| Transcript | `…/projects/-home-renkylo256-parsertest/8b233184-….jsonl` |
+| AgentSight DB | `~/parsertest/agentsight-20260623-062938.db` |
+| Wall clock | 21 s (eBPF capture) |
+| Model | `claude-opus-4-8` |
+| Harness | `./run-readnet.sh "<task>" ~/parsertest` |
+
+Result was correct: all 9 functions listed, `LICENSE.txt` downloaded,
+`summary.md` written. `src/delta.py` was never touched.
+
+### Ground-truth sources (and a tooling caveat)
+
+| op type | ground truth | how |
+|---|---|---|
+| **writes** | AgentSight file audit **+** `opensnoop-bpfcc` | AgentSight emits writes; opensnoop catches the rest (incl. curl's) |
+| **reads** | `opensnoop-bpfcc -T -e -F` | AgentSight emits **no read events** — opensnoop is the only read ground truth |
+| **network** | `opensnoop` (curl ran + wrote file) + downloaded content | see §"Network" below |
+
+`agentsight record --help` confirmed there is **still no read-event / argv
+flag**, so reads were captured independently with bcc-tools, attributed by
+**process subtree** (traced `claude` pid 5144 + its `curl` child pid 5272) and
+**repo path**, exactly as the Run-1 writes analysis filtered agent-internal noise.
+
+> **`execsnoop-bpfcc` does not work on this kernel.** Its BPF program fails to
+> compile (`static_assert(sizeof(struct filename) % 64 == 0)` — a bcc/kernel
+> struct mismatch), so full-argv ground truth was unavailable. `opensnoop`
+> compiles and runs fine. Argv-level cross-checks therefore came from
+> AgentSight's **process audit** (command names only: `git ×6, cat ×5, base64
+> ×4, grep ×4, claude.exe ×3, head ×3, bash ×2, env ×2`) plus opensnoop's
+> per-file, per-pid attribution — sufficient to score all three op types without
+> argv.
+
+## Results — precision / recall
+
+| op type | ground truth | parser | TP | FP | FN | **precision** | **recall** |
+|---|---|---|---|---|---|---|---|
+| **Reads** | alpha, beta, gamma, LICENSE.txt | same 4 | 4 | 0 | 0 | **1.00** | **1.00** |
+| **Writes** | summary.md, LICENSE.txt | summary.md | 1 | 0 | 1 | **1.00** | **0.50** |
+| **Network** (task) | raw.githubusercontent.com | raw.githubusercontent.com | 1 | 0 | 0 | **1.00** | **1.00** |
+
+### Reads — precision 1.00 / recall 1.00
+
+The parser inferred exactly the four files opened `O_RDONLY` by the `claude`
+subtree (`src/alpha.py`, `src/beta.py`, `src/gamma.py`, and `LICENSE.txt` — the
+agent read the download back to quote its first line). Crucially it did **not**
+report the decoy `src/delta.py`, which opensnoop confirms was never opened: **no
+hallucinated read**. This is the first time read recall has been scored against
+kernel ground truth, and the string-parser is exact.
+
+### Writes — precision 1.00 / recall 0.50 (one real miss)
+
+The parser caught `summary.md` (the editor write, via its `.tmp.<pid>` atomic
+rename) but **missed `LICENSE.txt`** — which `curl -o LICENSE.txt` created
+(opensnoop shows `curl` pid 5272 opening it `O_WRONLY|O_CREAT|O_TRUNC`).
+
+This is a **characterizable parser limitation, not a fluke.** `_bash_files`
+models writes only via shell **redirects** (`>`, `>>`) and `tee`
+(`parser.py:100-103`); it has no handling for commands whose **output flag**
+names a file — `curl -o` / `wget -O` / `aria2c -o`, or `git clone <dir>`. So the
+curl is recorded on the **network** axis (correctly) but its **file** side
+effect is invisible. Note AgentSight's own writes-only audit *also* missed this
+write (curl isn't `claude.exe`); only opensnoop caught it — exactly why the
+independent read/write capture was added.
+
+### Network — precision 1.00 / recall 1.00
+
+The parser reported one task endpoint, `raw.githubusercontent.com`, from the
+Bash command string — correct and complete.
+
+**Why ground truth is opensnoop + content, not AgentSight here.** AgentSight's
+TLS uprobe is pinned to `claude.exe` (`--binary-path`), and the eight endpoints
+it captured are all `claude.exe`'s own control plane (`api.anthropic.com` ×N,
+`http-intake.logs.us5.datadoghq.com`). The **task** call is made by **`curl`,
+which links OpenSSL, not claude's BoringSSL**, so AgentSight never sees it. The
+call is instead proven independently: `curl` (pid 5272) executed and wrote
+`LICENSE.txt`, and that file contains the boltons license
+(`Copyright (c) 2013, Mahmoud Hashemi`) — i.e. the HTTPS GET to
+`raw.githubusercontent.com` demonstrably succeeded. Parser endpoint matches
+ground truth, no false positives.
+
+## Run-2 scorecard
+
+| Signal | precision | recall | Verdict |
+|---|---|---|---|
+| Task file **reads** | 1.00 | 1.00 | ✅ exact (incl. decoy correctly omitted) |
+| Task file **writes** | 1.00 | 0.50 | ⚠️ misses `curl -o`/`wget -O` output files |
+| Task **network** | 1.00 | 1.00 | ✅ exact |
+
+**Net (Run 2).** Reads and task-network — both *unvalidated* after Run 1 — are
+now scored against kernel ground truth and the parser is **exact** on each. The
+one genuine gap is **writes created by a download command's output flag**
+(`curl -o`), which the parser attributes to the network axis but not the file
+axis; closing it is a small, well-scoped fix to `_bash_files` (treat `-o/-O`
+output targets of net commands as writes). Tooling caveat for reproducers:
+`opensnoop-bpfcc` is the workable read/write ground truth on this VM;
+`execsnoop-bpfcc` will not compile against this kernel.

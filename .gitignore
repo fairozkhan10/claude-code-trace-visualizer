@@ -3,6 +3,11 @@ reports/
 *.json
 !examples/example-report.json
 
+# agentsight eBPF capture databases (local, large)
+agentsight-*.db
+agentsight-*.db-shm
+agentsight-*.db-wal
+
 # python
 __pycache__/
 *.pyc

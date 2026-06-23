@@ -664,6 +664,7 @@ class _Builder:
         self.models: list[str] = []
         self.session_id = self.cwd = self.git_branch = None
         self.timestamps: list[float] = []
+        self.seen_msg_ids: set[str] = set()        # dedup repeated per-message usage
         self.turn_idx = 0
         self.call_idx = 0
 
@@ -684,21 +685,32 @@ class _Builder:
             model = msg.get("model")
             if model and model not in self.models:
                 self.models.append(model)
-            usage = msg.get("usage", {}) or {}
             content = msg.get("content", []) or []
             calls_here = [c for c in content
                           if isinstance(c, dict) and c.get("type") == "tool_use"]
-            self.turns.append(Turn(
-                index=self.turn_idx,
-                model=model,
-                timestamp=ts,
-                input_tokens=usage.get("input_tokens", 0),
-                output_tokens=usage.get("output_tokens", 0),
-                cache_read_tokens=usage.get("cache_read_input_tokens", 0),
-                cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
-                cost_usd=turn_cost(model, usage),
-                n_tool_calls=len(calls_here),
-            ))
+            # One logical assistant message (one inference call) is split across
+            # several transcript lines — one content block each — that all REPEAT
+            # the same message-level usage. Count usage/cost once per message.id
+            # (else tokens & cost inflate ~2-3x); still process every tool_use.
+            msg_id = msg.get("id")
+            if msg_id is None or msg_id not in self.seen_msg_ids:
+                if msg_id is not None:
+                    self.seen_msg_ids.add(msg_id)
+                usage = msg.get("usage", {}) or {}
+                self.turns.append(Turn(
+                    index=self.turn_idx,
+                    model=model,
+                    timestamp=ts,
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                    cache_read_tokens=usage.get("cache_read_input_tokens", 0),
+                    cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
+                    cost_usd=turn_cost(model, usage),
+                    n_tool_calls=len(calls_here),
+                ))
+                self.turn_idx += 1
+            elif self.turns:                      # continuation line of the same message
+                self.turns[-1].n_tool_calls += len(calls_here)
             for c in calls_here:
                 name = c.get("name", "?")
                 tin = c.get("input", {}) if isinstance(c.get("input"), dict) else {}
@@ -717,13 +729,12 @@ class _Builder:
                     files=[p for p, _ in ops],
                     file_modes=dict(ops),
                     output_chars=0,
-                    turn=self.turn_idx,
+                    turn=self.turn_idx - 1,       # this message's turn (just appended above)
                     network=[{"kind": k, "target": t} for k, t in net],
                 )
                 self.pending[tc.id] = tc
                 self.tool_calls.append(tc)
                 self.call_idx += 1
-            self.turn_idx += 1
 
         elif typ == "user":
             content = msg.get("content")

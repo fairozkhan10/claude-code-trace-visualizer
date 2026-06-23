@@ -338,3 +338,92 @@ axis; closing it is a small, well-scoped fix to `_bash_files` (treat `-o/-O`
 output targets of net commands as writes). Tooling caveat for reproducers:
 `opensnoop-bpfcc` is the workable read/write ground truth on this VM;
 `execsnoop-bpfcc` will not compile against this kernel.
+
+---
+
+# Token ground-truth (MITM) — the check eBPF couldn't give
+
+Run 1 left **token counts uncorroborated**: `claude.exe` statically links
+BoringSSL, so AgentSight's `SSL_read` uprobe could not reassemble response
+bodies, and the `usage` block lives in the response. The `/tmp/ours.json` token
+numbers rested solely on the transcript's **self-report**, with no independent
+wire-level check. A **MITM proxy** terminates TLS itself, so it reads the
+decrypted body directly — the right tool where uprobes failed.
+
+## Method
+
+| | |
+|---|---|
+| Proxy | `mitmdump 8.1.1` on `127.0.0.1:8080`, headless, `block_global=false` |
+| Addon | `mitm_token_addon.py` — parses the **SSE** stream of every `api.anthropic.com /v1/messages` response |
+| Routing | `HTTPS_PROXY`/`HTTP_PROXY=http://127.0.0.1:8080`, `NODE_EXTRA_CA_CERTS=~/.mitmproxy/mitmproxy-ca-cert.pem` |
+| Task | read `alpha/beta/gamma.py`, write per-function descriptions to `descriptions.md`, read it back |
+
+**Claude Code accepted the proxy and the mitmproxy CA — no cert pinning, no
+rejection.** Verified first on a trivial `claude -p "hi"` run, which produced a
+clean decryptable `/v1/messages` flow with a usage block before the real task.
+
+**The SSE trap (the thing that breaks a naïve `json.loads`).** `/v1/messages`
+responses are `text/event-stream`, not one JSON body. Usage is split across
+events: the **prompt-side** counts (`input_tokens`, `cache_read_input_tokens`,
+`cache_creation_input_tokens`) arrive once in `message_start`; the **decode-side**
+`output_tokens` arrives in `message_delta` (final cumulative). The addon walks
+the `data:` lines and accumulates per event type. It records **only** model id +
+the four usage integers — no prompt/response text, no account identifiers.
+
+## What the wire showed (5 calls)
+
+| # | model | input | output | cache-read | cache-create |
+|---|---|---|---|---|---|
+| 1 | `claude-haiku-4-5` (title-gen) | 575 | 14 | 0 | 0 |
+| 2 | `claude-opus-4-8` | 2310 | 211 | 7891 | 2482 |
+| 3 | `claude-opus-4-8` | 417 | 412 | 10373 | 2660 |
+| 4 | `claude-opus-4-8` | 2 | 67 | 13033 | 876 |
+| 5 | `claude-opus-4-8` | 2 | 156 | 13909 | 443 |
+
+The `claude-haiku-4-5` call is the title-generation side-call — **real wire
+traffic that never appears in the transcript** (consistent with Run 1's finding
+that the transcript omits it). The four `claude-opus-4-8` calls are the main
+agent loop. (mitm proxied 6 `POST /v1/messages` flows; the addon extracted usage
+from 5 — the 6th was a connection-reuse retry on the same socket carrying no
+distinct completion.)
+
+## Result — wire corroborates the transcript *exactly*, and exposes a parser bug
+
+The four wire opus calls reconcile with the transcript **to the token** — but
+only after **deduplicating the transcript by message id**:
+
+| | input | output | cache-read | cache-create |
+|---|---|---|---|---|
+| **Wire (opus, 4 calls)** | 2 731 | 846 | 45 206 | 6 461 |
+| **Transcript, deduped by msg id** | 2 731 | 846 | 45 206 | 6 461 |
+| **Parser `token_totals` (`/tmp/ours.json`)** | **9 661** | **1 479** | **68 879** | **13 907** |
+| Parser inflation | **3.54×** | 1.75× | 1.52× | 2.15× |
+
+So the **transcript's self-report is wire-accurate** — every per-message `usage`
+block matches the decrypted response exactly. But `cc_trace`'s **aggregation
+over-counts**: it sums `usage` per transcript *line*, and a single assistant turn
+emits **one line per content block** (text + each `tool_use`), every line
+repeating the *same* message-level usage. The first opus turn (msg id `gutSWqU8`)
+had **4 content blocks → its usage was counted 4×**, inflating input tokens 3.5×.
+
+**Cost.** Parser-reported `$0.620` vs. wire opus cost ≈ **`$0.293`** (≈2.1×
+inflated, same root cause). And the independent split kills the "decode-dominant"
+framing for this run: **output/decode is only ~22% of opus cost**; cache
+creation (`$0.121`) and cache reads (`$0.068`) dominate. This is a
+**cache/prefill-dominated** workload, not a decode-dominated one — exactly the
+kind of claim that needed an independent source to settle.
+
+## Verdict
+
+- **MITM token capture works** where eBPF/BoringSSL uprobes failed: full
+  `usage` recovered from the decrypted SSE stream, Claude Code does not pin certs.
+- The transcript's **per-message** token numbers are **exactly correct** (wire-verified).
+- `cc_trace`'s **token *totals* are inflated** by double-counting multi-block
+  assistant turns — a real, well-scoped parser bug (dedup `usage` by `message.id`
+  before summing). The decode-dominance story in `/tmp/ours.json` was an artifact
+  of that over-count; on the wire this run is **cache/prefill-dominated**.
+
+Reproduce: `mitmdump -p 8080 --set block_global=false -s mitm_token_addon.py`,
+then run `claude` with `HTTPS_PROXY`/`HTTP_PROXY` → `127.0.0.1:8080` and
+`NODE_EXTRA_CA_CERTS` → the mitmproxy CA.

@@ -74,6 +74,8 @@ def _is_pathish(tok: str) -> bool:
         return False
     if tok.startswith("/dev/"):                     # /dev/null and friends
         return False
+    if tok.endswith("/"):                           # a directory (e.g. grep's dir arg), not a file
+        return False
     if any(ch in _BAD_PATH_CHARS for ch in tok):
         return False
     # a path separator, or an extension (a dot that isn't a leading dotfile dot)

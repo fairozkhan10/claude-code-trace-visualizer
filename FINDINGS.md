@@ -16,7 +16,7 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
 
 ## TL;DR
 
-- **KV-cache reuse: confirmed, and it's the strongest signal.** ≥94% of context is
+- **KV-cache reuse: confirmed, and it's the strongest signal.** ≥95% of context is
   reused every turn, across every run. Agents really are KV-cache-heavy.
 - **The phase shift is more subtle than the paper says.** It's not a property of
   "agents" — it's a **task-kind × difficulty interaction**. Refactoring stays
@@ -68,19 +68,19 @@ reused KV-cache.
 
 | task type | repo | calls | dur (s) | cost ($) | **sep** | **purity** | **cache %** | phase sequence |
 |---|---|---:|---:|---:|---:|---:|---:|---|
-| data summary | A | 3 | 48 | 0.68 | 0.75 | 1.00 | 0.94 | `EEX` |
-| debug — trivial | F | 4 | 24 | 0.92 | 0.22† | 0.75† | 0.94 | `XEXX` |
-| refactor | C | 7 | 74 | 2.20 | 0.45 | 1.00 | 0.96 | `EEEXEX` |
-| refactor | B (rep 2) | 12 | 70 | 2.01 | 0.55 | 1.00 | 0.98 | `EEEEEEEXXXX` |
-| refactor — mid | H | 14 | 104 | 2.33 | −0.05 | 0.86 | 0.99 | `EXXXXXXXXXEEXX` |
-| refactor | B | 15 | 75 | 2.24 | 0.48 | 0.93 | 0.98 | `EEEEEEEEEEEXXEX` |
-| **debug — short** | **I2** | 11 | 86 | 2.03 | 0.26 | **0.82** | 0.98 | `XEEEEXXXEXX` |
-| **debug — short** | **I** | 16 | 90 | 1.55 | 0.28 | **0.81** | 0.99 | `XEEEEEEXXEXXXEXX` |
-| **refactor — long** | **J2** | 22 | 220 | 8.73 | 0.22 | **0.91** | 0.99 | `EEEEXXXXXXXXXXXXXXEEXX` |
-| debug | E | 23 | 518 | 5.12 | 0.14 | 0.70 | 0.99 | `EEXXEXXEEXEXXXXEEXXXXEX` |
-| **refactor — long** | **J** | 24 | 185 | 7.05 | 0.51 | **0.96** | 0.99 | `EEEEEEEEEEXEEXXXXXXXXXXX` |
-| debug — mid | G | 25 | 310 | 5.07 | 0.23 | 0.76 | 1.00 | `XEEEXEEXXXXEEEEEEXXXXXXXX` |
-| debug | D | 34 | 606 | 9.20 | 0.09 | 0.68 | 1.00 | `EEEXXXXEEEXXXEXXXXEXEXXEEXEEXXEXXX` |
+| data summary | A | 3 | 48 | 0.34 | 0.75 | 1.00 | 0.95 | `EEX` |
+| debug — trivial | F | 4 | 24 | 0.50 | 0.22† | 0.75† | 0.96 | `XEXX` |
+| refactor | C | 7 | 74 | 0.70 | 0.45 | 0.83 | 0.97 | `EEEXEX` |
+| refactor | B (rep 2) | 12 | 70 | 0.93 | 0.55 | 1.00 | 0.99 | `EEEEEEEXXXX` |
+| refactor — mid | H | 14 | 104 | 1.32 | −0.05 | 0.86 | 0.99 | `EXXXXXXXXXEEXX` |
+| refactor | B | 15 | 75 | 0.79 | 0.48 | 0.93 | 0.98 | `EEEEEEEEEEEXXEX` |
+| **debug — short** | **I2** | 11 | 86 | 1.15 | 0.26 | **0.82** | 0.99 | `XEEEEXXXEXX` |
+| **debug — short** | **I** | 16 | 90 | 1.04 | 0.28 | **0.81** | 0.99 | `XEEEEEEXXEXXXEXX` |
+| **refactor — long** | **J2** | 22 | 220 | 3.84 | 0.22 | **0.91** | 1.00 | `EEEEXXXXXXXXXXXXXXEEXX` |
+| debug | E | 23 | 518 | 2.26 | 0.14 | 0.70 | 0.99 | `EEXXEXXEEXEXXXXEEXXXXEX` |
+| **refactor — long** | **J** | 24 | 185 | 2.62 | 0.51 | **0.96** | 0.99 | `EEEEEEEEEEXEEXXXXXXXXXXX` |
+| debug — mid | G | 25 | 310 | 2.58 | 0.23 | 0.76 | 1.00 | `XEEEXEEXXXXEEEEEEXXXXXXXX` |
+| debug | D | 34 | 606 | 5.05 | 0.09 | 0.68 | 1.00 | `EEEXXXXEEEXXXEXXXXEXEXXEEXEEXXEXXX` |
 
 Rows are ordered by length. **Read the `purity` column top to bottom:** it stays
 high (0.81–1.00) for *every* task — refactor and debug alike — right up until ~20
@@ -90,11 +90,22 @@ refactor **J** sails through at 0.96. That single pattern is finding 2.
 (†F is too short at 4 calls for `sep`/`purity` to mean anything; it's read only for
 cache and decode.)
 
+> **Numbers note (v2, 2026-06-23).** The cost/token figures above were re-generated
+> after fixing a token **double-count** in the parser: one assistant message spans
+> several transcript lines, each repeating the same message-level `usage`, and the
+> builder was summing per line — inflating absolute tokens and cost by ~1.5–3×. Counts
+> are now taken once per `message.id` (verified equal to the wire totals via the MITM
+> capture in finding 5). The earlier `$`/token numbers were correspondingly high. **All
+> three headline findings are unaffected:** every *ratio*-based metric (`cache%`,
+> `purity`, `sep`, decode-share, output:fresh-input) is robust to the bug, because
+> numerator and denominator inflated together — only the absolute cost and token totals
+> moved. Tool-call counts, durations, and phase sequences were never affected.
+
 ## What we found
 
 ### 1. KV-cache reuse holds — universally, strongly, and it explains the cost
 
-`cache%` is **0.94–1.00 across all thirteen runs.** Fresh input stays in the low
+`cache%` is **0.95–1.00 across all thirteen runs.** Fresh input stays in the low
 thousands of tokens while cache-read runs into the hundreds of thousands to
 *millions*. The paper's KV-cache-heavy claim is the cleanest, most
 repo-independent result here — no asterisks.
@@ -152,8 +163,8 @@ purely from a re-check at the end, though its `purity` is a clean 0.86.)*
 Bash is the top tool in **every** run — Claude reaches for the shell (including
 here-docs and inline scripts) far more than Read/Edit/Write, which is exactly why
 the parser works so hard to read file *and* network I/O out of command strings. And
-the hard debugging runs cost ~5–14× more and emit ~5–25× more output than refactor
-runs: difficulty is expensive, not linearly.
+the hard debugging runs (E, G, D) cost ~3–7× more and emit ~3–8× more output than the
+short refactor runs: difficulty is expensive, not linearly.
 
 ### 4. Decode-intensity scales with *effort*, not task type
 
@@ -164,18 +175,18 @@ actually runs — fresh input + cache-writes. On that axis there's a clean gradi
 
 | task (by length) | calls | output : fresh-input | decode share of prefill-work |
 |---|---:|---:|---:|
-| data (A) | 3 | 0.35 | 8% |
-| debug — trivial (F) | 4 | 0.41 | 5% |
-| refactor (C) | 12 | 1.06 | 17% |
-| refactor — mid (H) | 14 | 1.98 | 19% |
-| debug — short (I) | 16 | 1.24 | 21% |
-| debug (E) | 23 | 2.09 | 23% |
-| **refactor — long (J)** | 24 | **3.58** | **24%** |
-| debug — mid (G) | 25 | 5.06 | 31% |
-| debug (D) | 34 | 7.50 | 30% |
+| data (A) | 3 | 0.46 | 11% |
+| debug — trivial (F) | 4 | 0.48 | 6% |
+| refactor (C) | 7 | 1.03 | 14% |
+| refactor — mid (H) | 14 | 2.52 | 25% |
+| debug — short (I) | 16 | 1.60 | 21% |
+| debug (E) | 23 | 2.39 | 23% |
+| **refactor — long (J)** | 24 | **5.11** | **28%** |
+| debug — mid (G) | 25 | 4.96 | 31% |
+| debug (D) | 34 | 7.78 | 29% |
 
 It climbs almost perfectly with length — but notice the axis is **effort, not type.**
-The long refactor **J** is decode-heavy (3.58) right next to the long bug-fixes; the
+The long refactor **J** is decode-heavy (5.11) right next to the long bug-fixes; the
 trivial bug **F** sits at the bottom with the data task. So decode-intensity and the
 phase breakdown (finding 2) are *different* signals that happen to correlate, because
 long debugging maximizes both. *(Caveats: "decode-dominated" holds in the

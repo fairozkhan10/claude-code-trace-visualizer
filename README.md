@@ -64,8 +64,8 @@ You get one row per run with its phase mix, the **explore→execute separation**
 
 ```
 run                     calls  dur(s)  cost$  sep   pure  cache%  net  top tool
-file search / refactor  15     75      2.24   0.48  0.93  0.98    —    Bash
-coding bug fix          34     606     9.20   0.09  0.70  1.00    2    Bash
+file search / refactor  15     75      0.79   0.48  0.93  0.98    —    Bash
+coding bug fix          34     606     5.05   0.09  0.68  1.00    2    Bash
 ```
 
 `sep` (and the more robust `purity`) measure phase structure: **high = a clean
@@ -141,7 +141,7 @@ studied ReAct agents on Gemma/Qwen. This tool checks whether those claims hold f
 a *real* production agent (Claude Code) before anyone optimizes for them.
 
 📊 **Short version of what we found** (full write-up in [`FINDINGS.md`](FINDINGS.md)):
-KV-cache reuse holds universally (≥94% of context reused per turn), but the
+KV-cache reuse holds universally (≥95% of context reused per turn), but the
 explore→execute phase shift is a **task-kind × difficulty interaction** —
 refactoring stays cleanly front-loaded at any length, short debugging is clean too,
 and only *long* debugging dissolves into an interleaved loop.

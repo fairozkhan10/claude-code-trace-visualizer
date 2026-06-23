@@ -54,6 +54,12 @@ FILE_INPUT_KEYS = ("file_path", "path", "notebook_path", "filePath")
 # script argument of common read-or-run commands. Best-effort & heuristic.
 _REDIR_RE = re.compile(r"(?:\d*>>?|&>>?)\s*(\"[^\"]+\"|'[^']+'|[^\s;|&<>]+)")
 _TEE_RE = re.compile(r"\btee\s+(?:-a\s+)?(\"[^\"]+\"|'[^']+'|[^\s;|&<>]+)")
+# Downloaders write via an output flag, not a shell redirect: curl `-o FILE`,
+# wget `-O FILE`, or `--output[-document] FILE`. The capture after a short flag
+# may be a URL (curl `-O <url>`, remote-name form) — that's filtered out below.
+_OUTFILE_RE = re.compile(
+    r"\b(?:curl|wget)\b[^|&;\n]*?\s(?:-[oO]|--output|--output-document)(?:=|\s+)"
+    r"(\"[^\"]+\"|'[^']+'|[^\s;|&<>]+)")
 # Commands whose first path-like argument is a file being read or executed.
 READ_OR_RUN_CMDS = {
     "cat", "head", "tail", "less", "more", "wc", "nl", "od", "diff",
@@ -101,6 +107,9 @@ def _bash_files(command: str) -> list[tuple[str, str]]:
         add(m.group(1), "write")
     for m in _TEE_RE.finditer(command):
         add(m.group(1), "write")
+    for m in _OUTFILE_RE.finditer(command):
+        if "://" not in m.group(1):        # skip curl -O <url> (remote-name form)
+            add(m.group(1), "write")
 
     # reads / script runs: first path-like arg after a read-or-run command
     words = command.replace("|", " | ").split()

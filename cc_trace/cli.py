@@ -65,6 +65,48 @@ def _compare_main(argv: list[str]) -> int:
     return 0
 
 
+def _flame_main(argv: list[str]) -> int:
+    """`cc-trace flame A.jsonl B.jsonl … --view tokens -o flame.html` —
+    a phase-coloured flame graph (HTML) or folded stacks (.folded)."""
+    from . import flame as fl
+
+    ap = argparse.ArgumentParser(
+        prog="cc-trace flame",
+        description="Flame graph of a run, stacked phase → tool → target.")
+    ap.add_argument("targets", nargs="+",
+                    help=".jsonl transcripts or session ids (several = aggregated)")
+    ap.add_argument("--view", default="calls", choices=fl.VIEWS,
+                    help="what frame width means (default: calls)")
+    ap.add_argument("-o", "--out", default=None,
+                    help="output path; .folded → folded text, else self-contained HTML")
+    ap.add_argument("--open", action="store_true",
+                    help="open the HTML flame graph when done")
+    args = ap.parse_args(argv)
+
+    traces = []
+    for tgt in args.targets:
+        path = _resolve(tgt, False)
+        if path is None:
+            print(f"skipping {tgt}: no transcript found", file=sys.stderr)
+            continue
+        traces.append(parse_transcript(str(path)))
+    if not traces:
+        print("no usable transcripts", file=sys.stderr)
+        return 1
+
+    out = Path(args.out) if args.out else Path(f"flame-{args.view}.html")
+    if out.parent != Path(""):
+        out.parent.mkdir(parents=True, exist_ok=True)
+    if out.suffix == ".folded":
+        out.write_text(fl.render_folded(fl.folded(traces, args.view)), encoding="utf-8")
+    else:
+        out.write_text(fl.render_html(traces, args.view), encoding="utf-8")
+    print(f"wrote {out}  ({len(traces)} run(s), view={args.view})", file=sys.stderr)
+    if args.open and out.suffix != ".folded":
+        webbrowser.open(f"file://{out.resolve()}")
+    return 0
+
+
 def _all_transcripts() -> list[Path]:
     return sorted(
         PROJECTS_DIR.glob("*/*.jsonl"),
@@ -145,6 +187,8 @@ def main(argv: list[str] | None = None) -> int:
         return _compare_main(argv[1:])
     if argv and argv[0] == "live":
         return _live_main(argv[1:])
+    if argv and argv[0] == "flame":
+        return _flame_main(argv[1:])
 
     ap = argparse.ArgumentParser(
         prog="cc-trace",

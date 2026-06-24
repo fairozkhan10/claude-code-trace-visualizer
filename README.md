@@ -73,6 +73,27 @@ coding bug fix          34     606     5.05   0.09  0.68  1.00    2    Bash
 in a reproduce→fix→test loop. Which one you see depends on *task type × difficulty*
 — see [`FINDINGS.md`](FINDINGS.md).
 
+### Flame graph (phase → tool → target)
+
+Render a run as a flame graph, stacked **`phase → tool → target`** and *coloured by
+the explore→execute phase* — so a front-loaded refactor (a wide blue `explore` base)
+and an interleaved debug (blue/orange shredded together) look different at a glance:
+
+```bash
+# self-contained interactive HTML (click to zoom, hover for share)
+python3 -m cc_trace flame 20814a75 --view time -o reports/flame.html --open
+
+# …or folded stacks for speedscope / flamegraph.pl / inferno
+python3 -m cc_trace flame 20814a75 --view tokens -o reports/flame.folded
+
+# aggregate several runs into one graph (a `run` frame is added as the root)
+python3 -m cc_trace flame reports/*.jsonl --view calls -o reports/flame.html
+```
+
+`--view` sets what frame *width* means: `calls` (default), `time` (seconds),
+`tokens` (output tokens), `files`, or `net`. Sample:
+[`examples/example-flame.html`](examples/example-flame.html).
+
 ### Watch a run live (in-flight)
 
 Profile a run *as it happens* instead of after the fact:

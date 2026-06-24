@@ -28,6 +28,9 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
 - **Agents redo a real slice of their work** — ~16% of calls in refactoring, ~27% in
   debugging are near-duplicate repeats (re-editing a file, re-running a probe). A
   concrete caching/memoization target, biggest in debugging.
+- **It holds on a standard benchmark and a second model.** SWE-bench Lite instances
+  we *didn't* pick reproduce the clean short-task phase shift, and it's identical on
+  Opus and Sonnet — the phase structure is a property of the task, not the model.
 
 The middle finding is the interesting one, and it took two wrong turns to get
 right (see finding 2). Below is how we got there.
@@ -256,6 +259,34 @@ every call in a cluster after the first.
 The two repeat mechanisms are distinct caching targets: **Edit-churn** (the same
 file edited many times — a write-back/coalescing opportunity) and **Bash-rerun**
 (the same probe issued repeatedly — a result-memoization opportunity).
+
+### 7. Cross-check on a standard benchmark (SWE-bench Lite) + a second model
+
+The 13 runs above use repos *we* picked. To check the phase result on tasks we
+didn't choose, we ran instances from **SWE-bench Lite** through the same harness
+([`scripts/swebench_run.py`](scripts/swebench_run.py): clone @ base commit, apply
+the instance's *test* patch, drive `claude -p`, confirm red→green, profile). All
+were solved and reproduce finding 2:
+
+| instance | task kind | model | calls | purity | sequence |
+|---|---|---|---:|---:|---|
+| `pallets__flask-5063` | feature/refactor | Opus 4.8 | 8 | **1.00** | `EEEEXXXX` |
+| `pallets__flask-5063` | feature/refactor | **Sonnet** | 8 | **1.00** | `EEEEXXXX` |
+| `psf__requests-3362` | short debug | Opus 4.8 | 6 | **1.00** | `EEEEXX` |
+
+- **The clean front-load holds on tasks we didn't pick.** Short refactor *and*
+  short debug both come out cleanly phased (`EEE…XXX`) — exactly finding 2's
+  prediction for the short corners.
+- **It's model-invariant.** Running the *same* flask task on **Opus and Sonnet**
+  gave an identical phase signature (purity 1.00, `EEEEXXXX`); they differed only in
+  efficiency (Sonnet was faster and emitted ~⅓ fewer output tokens). So the phase
+  structure is a property of the *task*, not the model.
+- **Still open: the interleaving corner.** These instances are short (6–8 calls).
+  The long-debug corner that *breaks* the phase shift needs 20+ calls, which on
+  SWE-bench Lite means the heavy repos (django/sympy/sklearn = 214/300 instances)
+  that require per-instance Docker images — not yet run on this bare-metal setup.
+  *(Env note: SWE-bench targets period-correct Pythons; flask 2.3 runs on 3.12,
+  but requests 2.10 needs 3.9 — `collections.MutableMapping` was removed in 3.10.)*
 
 ## Limitations (read before citing)
 

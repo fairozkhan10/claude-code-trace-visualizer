@@ -41,7 +41,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # (e.g. flask 2.3's test_cli imports `_pytest.monkeypatch.notset`).
 INSTALL = {
     "pallets/flask": ["pip install -e .", "pip install 'pytest>=7,<8'"],
-    "psf/requests": ["pip install -e .", "pip install 'pytest>=7,<8'"],
+    "psf/requests": ["pip install -e .",
+                     "pip install 'pytest>=7,<8' 'urllib3<2' chardet idna certifi"],
 }
 DEFAULT_INSTALL = ["pip install -e .", "pip install 'pytest>=7,<8'"]
 
@@ -106,7 +107,15 @@ def main() -> int:
     sh("git reset --hard && git clean -fdq", cwd=repo, check=False)
     sh(f"git checkout -q {base}", cwd=repo)
 
-    # 2. venv + install
+    # 2. venv + install (recreate if it was built with a different interpreter)
+    want_ver = sh(f"{args.py} -c 'import sys;print(\"%d.%d\"%sys.version_info[:2])'",
+                  capture=True).stdout.strip()
+    have_ver = ""
+    if (venv / "bin" / "python").exists():
+        have_ver = sh(f"{venv / 'bin' / 'python'} -c 'import sys;print(\"%d.%d\"%sys.version_info[:2])'",
+                      capture=True, check=False).stdout.strip()
+    if venv.exists() and have_ver != want_ver:
+        sh(f"rm -rf {shlex.quote(str(venv))}")
     if not venv.exists():
         sh(f"{args.py} -m venv {shlex.quote(str(venv))}")
     env = venv_env(venv)
@@ -160,7 +169,7 @@ def main() -> int:
     tr = cands[0]
     rep = Path(args.reports_dir)
     rep.mkdir(parents=True, exist_ok=True)
-    stem = f"swe-{args.instance_id}"
+    stem = f"swe-{args.instance_id}" + (f"-{args.model}" if args.model else "")
     sh(f"cd {shlex.quote(str(REPO_ROOT))} && python3 -m cc_trace {shlex.quote(str(tr))} "
        f"-o {shlex.quote(str(rep / (stem + '.html')))} --json", check=False)
     sh(f"cd {shlex.quote(str(REPO_ROOT))} && python3 -m cc_trace flame {shlex.quote(str(tr))} "

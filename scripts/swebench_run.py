@@ -72,9 +72,28 @@ def venv_env(venv: Path) -> dict:
     return env
 
 
+def resolve_tests(repo: Path, tests: list[str]) -> list[str]:
+    """Turn each FAIL_TO_PASS spec into something pytest can select.
+
+    flask/requests give pytest node-ids (``tests/x.py::Cls::test``) — used as-is.
+    sympy-style give a *bare* function name (``test_mod``) because it runs its own
+    test runner; resolve those to ``<file>::<name>`` by finding the def.
+    """
+    out = []
+    for t in tests:
+        if "::" in t or "/" in t or t.endswith(".py"):
+            out.append(t)
+            continue
+        r = subprocess.run(f"grep -rln 'def {t}(' --include='*.py' .",
+                           shell=True, cwd=repo, capture_output=True, text=True)
+        files = r.stdout.split()
+        out.append(f"{files[0]}::{t}" if files else t)
+    return out
+
+
 def run_tests(repo: Path, env: dict, tests: list[str]) -> bool:
     """True if all named tests pass."""
-    sel = " ".join(shlex.quote(t) for t in tests)
+    sel = " ".join(shlex.quote(t) for t in resolve_tests(repo, tests))
     r = sh(f"python -m pytest -x -q {sel}", cwd=repo, env=env, check=False)
     return r.returncode == 0
 

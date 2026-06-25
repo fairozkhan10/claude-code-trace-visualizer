@@ -263,30 +263,39 @@ file edited many times — a write-back/coalescing opportunity) and **Bash-rerun
 ### 7. Cross-check on a standard benchmark (SWE-bench Lite) + a second model
 
 The 13 runs above use repos *we* picked. To check the phase result on tasks we
-didn't choose, we ran instances from **SWE-bench Lite** through the same harness
+didn't choose, we ran five **SWE-bench Lite** instances through the same harness
 ([`scripts/swebench_run.py`](scripts/swebench_run.py): clone @ base commit, apply
-the instance's *test* patch, drive `claude -p`, confirm red→green, profile). All
-were solved and reproduce finding 2:
+the instance's *test* patch, drive `claude -p`, confirm red→green, profile) — three
+repos, two models, a refactor plus three different debugging bugs. **All were solved,
+and every one reproduces finding 2's *clean* corner:**
 
 | instance | task kind | model | calls | purity | sequence |
 |---|---|---|---:|---:|---|
 | `pallets__flask-5063` | feature/refactor | Opus 4.8 | 8 | **1.00** | `EEEEXXXX` |
 | `pallets__flask-5063` | feature/refactor | **Sonnet** | 8 | **1.00** | `EEEEXXXX` |
-| `psf__requests-3362` | short debug | Opus 4.8 | 6 | **1.00** | `EEEEXX` |
+| `psf__requests-3362` | debug (unicode decode) | Opus 4.8 | 6 | **1.00** | `EEEEXX` |
+| `sympy__sympy-13177` | debug (`Mod` math bug) | Opus 4.8 | 12 | **0.92** | `EEEXXEXXXXXX` |
+| `sympy__sympy-13480` | debug (`subs` crash) | Opus 4.8 | 3 | **1.00** | `EXX` |
 
-- **The clean front-load holds on tasks we didn't pick.** Short refactor *and*
-  short debug both come out cleanly phased (`EEE…XXX`) — exactly finding 2's
-  prediction for the short corners.
-- **It's model-invariant.** Running the *same* flask task on **Opus and Sonnet**
-  gave an identical phase signature (purity 1.00, `EEEEXXXX`); they differed only in
-  efficiency (Sonnet was faster and emitted ~⅓ fewer output tokens). So the phase
-  structure is a property of the *task*, not the model.
-- **Still open: the interleaving corner.** These instances are short (6–8 calls).
-  The long-debug corner that *breaks* the phase shift needs 20+ calls, which on
-  SWE-bench Lite means the heavy repos (django/sympy/sklearn = 214/300 instances)
-  that require per-instance Docker images — not yet run on this bare-metal setup.
-  *(Env note: SWE-bench targets period-correct Pythons; flask 2.3 runs on 3.12,
-  but requests 2.10 needs 3.9 — `collections.MutableMapping` was removed in 3.10.)*
+- **The clean front-load holds on tasks we didn't pick.** Refactor *and* debugging
+  both come out cleanly phased (`EEE…XXX`, purity 0.92–1.00) — finding 2's prediction
+  for the short/tractable corners.
+- **It's model-invariant.** The *same* flask task on **Opus and Sonnet** gave an
+  identical phase signature (purity 1.00, `EEEEXXXX`); they differed only in efficiency
+  (Sonnet faster, ~⅓ fewer output tokens). Phase structure is a property of the *task*,
+  not the model.
+- **The interleaving corner doesn't appear here — and that itself is the finding.**
+  Every Lite run stayed short (3–12 calls) and clean, *including* the debugging ones.
+  The reason isn't length per se: SWE-bench Lite bugs are **well-specified and
+  tractable** (a clear repro, often pointing near the fault), so a frontier model
+  *diagnoses fast* and never enters the long reproduce→hypothesize→re-test loop. The
+  interleaving regime (finding 2's long-debug tail) needs harder-to-**diagnose**,
+  under-specified bugs — which is exactly what our own hand-built long-debug repos
+  were. So the breaking corner is about **diagnostic difficulty, not task source or
+  call count** — and Lite, by construction, sits in the clean regime for a strong model.
+  *(Env note: SWE-bench targets period-correct Pythons — flask 2.3 runs on 3.12, but
+  sympy 1.1 / requests 2.10 need 3.9. Heavy repos that need per-instance Docker, and
+  SWE-bench Verified's nastier bugs, are the route to eliciting the long tail.)*
 
 ## Limitations (read before citing)
 

@@ -297,6 +297,40 @@ and every one reproduces finding 2's *clean* corner:**
   sympy 1.1 / requests 2.10 need 3.9. Heavy repos that need per-instance Docker, and
   SWE-bench Verified's nastier bugs, are the route to eliciting the long tail.)*
 
+### 8. Head-to-head with another offline profiler (agentpprof)
+
+`cc_trace` isn't the only tool that profiles agent transcripts offline.
+**[agentpprof](https://github.com/eunomia-bpf/agentsight)** (the same group as the
+AgentSight tracer in finding 5) reads the *same* Claude Code JSONL and projects it
+into pprof/flame-graph profiles by `tokens` / `files` / `network`. We built it and
+ran it against two of the SWE-bench transcripts cc_trace already profiled, and diffed
+the overlapping metrics:
+
+| metric (one run, flask-5063) | cc_trace | agentpprof | note |
+|---|---:|---:|---|
+| output tokens | 3,702 | 7,142 | agentpprof **1.9×** higher |
+| total tokens | 128,429 | 204,913 | agentpprof **1.6×** higher |
+| files | `cli.py` (w3), `test_cli.py` (r2) | `src/flask` (dir), `tests/…` | cc_trace **file-level**; agentpprof **dir-level** |
+| network | 0 | 0 | agree |
+
+- **Tokens: agentpprof over-reports ~1.5–1.9×** (same pattern on the sympy run: 1.6×
+  output). cc_trace's counts are **wire-validated** (the MITM check in finding 5, after
+  deduping `usage` per `message.id`). So the gap is an **independent corroboration of
+  our token-double-count finding** — a second tool that sums repeated per-message usage
+  lands ~1.5–2× high, exactly the failure we fixed. *(We didn't fully trace agentpprof's
+  accounting, so we report the discrepancy, not a root-cause claim about their code.)*
+- **Files: a precision-vs-grouping trade-off.** cc_trace tracks individual files with
+  read/write modes (`cli.py` *written*, `mod.py` *written* — matching the real fix, and
+  eBPF-validated exact on writes in finding 5). agentpprof groups by **directory** and
+  misattributed one write to the test file. Each tool has one wart (cc_trace emitted a
+  spurious `p.is_Pow` token from a command string).
+- **Different missions, hence complementary.** agentpprof's value-add is **semantic
+  intent tagging** (collapse 1000s of prompts into `debug`/`review` flame bars) — but
+  that needs tag rules configured (coverage was 0% untagged here). cc_trace's value-add
+  is the per-run **phase / cache / purity** workload characterization agentpprof doesn't
+  compute. On the *raw* shared measurements, cc_trace is the more accurate/granular one;
+  agentpprof is the better cross-session **aggregator**.
+
 ## Limitations (read before citing)
 
 - **The decisive corners are n=2.** Short-debug and long-refactor are each two runs

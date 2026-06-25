@@ -175,7 +175,7 @@ short refactor runs: difficulty is expensive, not linearly.
 ### 4. Decode-intensity scales with *effort*, not task type
 
 The paper's third pillar is decode-dominance. The honest version: by raw token
-count the workload is *prefill*-heavy, because ≥94% of context is free cache reuse
+count the workload is *prefill*-heavy, because ≥95% of context is free cache reuse
 (finding 1). The meaningful question is decode relative to the prefill work that
 actually runs — fresh input + cache-writes. On that axis there's a clean gradient:
 
@@ -205,8 +205,9 @@ Every finding above rests on `cc_trace`'s best-effort parsing of the transcript 
 including file/network I/O scraped out of Bash *command strings*. To see how much
 that can be trusted, we ran the tool **and** [AgentSight](https://eunomia.dev/agentsight/)
 (an eBPF tracer that observes the same run at the syscall + TLS layer) on one
-identical task, and diffed them. Full write-up: [`ebpf-validation.md`](ebpf-validation.md)
-on the `ebpf-validation` branch. The short version:
+identical task, and diffed them. Full write-up:
+[`ebpf-validation.md` on the `ebpf-validation` branch](https://github.com/fairozkhan10/claude-code-trace-visualizer/blob/ebpf-validation/ebpf-validation.md).
+The short version:
 
 - **Where eBPF can keep score, the parser is exact.** On task file *writes* — the
   one signal with clean kernel ground truth here — precision and recall were both

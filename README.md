@@ -167,6 +167,15 @@ explore→execute phase shift is a **task-kind × difficulty interaction** —
 refactoring stays cleanly front-loaded at any length, short debugging is clean too,
 and only *long* debugging dissolves into an interleaved loop.
 
+### Where to look (for reviewers)
+
+| Doc | What's in it |
+|---|---|
+| **[`README.md`](README.md)** (this file) | what the tool is and how to run it |
+| **[`FINDINGS.md`](FINDINGS.md)** | the research — 8 findings, validated against an eBPF tracer, SWE-bench, a second model, and a peer tool |
+| **[`REPORT.md`](REPORT.md)** | a short, honest project report: the brief, what got built, what we learned |
+| `examples/` | runnable sample outputs (`example-report.html`, `example-flame.html`) — open without running anything |
+
 ---
 
 ## Output & layout

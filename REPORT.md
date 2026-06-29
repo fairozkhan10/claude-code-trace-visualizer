@@ -55,7 +55,7 @@ Done for its purpose; not hardened for strangers.
 ## What we learned
 
 The tool was the deliverable, but using it produced a genuinely interesting result
-— and the *way* it evolved is the real lesson. (Full detail, 8 findings, in
+— and the *way* it evolved is the real lesson. (Full detail, 9 findings, in
 [`FINDINGS.md`](FINDINGS.md).)
 
 1. **The headline finding got better by being wrong twice.** It went from a clean

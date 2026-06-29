@@ -172,7 +172,7 @@ and only *long* debugging dissolves into an interleaved loop.
 | Doc | What's in it |
 |---|---|
 | **[`README.md`](README.md)** (this file) | what the tool is and how to run it |
-| **[`FINDINGS.md`](FINDINGS.md)** | the research — 8 findings, validated against an eBPF tracer, SWE-bench, a second model, and a peer tool |
+| **[`FINDINGS.md`](FINDINGS.md)** | the research — 9 findings, validated against an eBPF tracer, SWE-bench, Terminal-Bench, a second model, and a peer tool |
 | **[`REPORT.md`](REPORT.md)** | a short, honest project report: the brief, what got built, what we learned |
 | `examples/` | runnable sample outputs (`example-report.html`, `example-flame.html`) — open without running anything |
 

@@ -31,6 +31,10 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
 - **It holds on a standard benchmark and a second model.** SWE-bench Lite instances
   we *didn't* pick reproduce the clean short-task phase shift, and it's identical on
   Opus and Sonnet — the phase structure is a property of the task, not the model.
+- **A third task family looks different — and that's the point.** On Terminal-Bench
+  (shell/sysadmin), the workload is *execute-dominated* (often no explore phase at all),
+  Bash-only, with near-zero decode — while KV-cache reuse stays universal. Phase
+  structure is task-shaped, now shown across refactor, debug, and sysadmin work.
 
 The middle finding is the interesting one, and it took two wrong turns to get
 right (see finding 2). Below is how we got there.
@@ -332,6 +336,54 @@ the overlapping metrics:
   compute. On the *raw* shared measurements, cc_trace is the more accurate/granular one;
   agentpprof is the better cross-session **aggregator**.
 
+### 9. A third task distribution: Terminal-Bench (shell/sysadmin)
+
+Findings 2/7 cover *code-edit* work (refactor, debug). To test whether the phase
+framework generalizes to a different kind of work, we ran **[Terminal-Bench](https://www.tbench.ai/)
+core** (hand-crafted shell/sysadmin tasks: fix permissions, repair a git repo,
+issue a self-signed cert, parse nginx logs, truncate a sqlite db, stand up a git
+web server). Six tasks, Claude Code as the agent, each transcript profiled by
+`cc_trace`.
+
+**Getting here cleared the auth wall that blocked the eBPF/Docker work (finding 5).**
+Terminal-Bench runs the agent *inside a per-task Linux container*, and the built-in
+`claude-code` agent demands an `ANTHROPIC_API_KEY` — which a $20 Pro plan doesn't
+have (its OAuth token lives in the macOS Keychain, unmountable into a container). We
+wrote a small custom agent that injects the Pro token via `CLAUDE_CODE_OAUTH_TOKEN`
+and captures `claude`'s `--output-format stream-json` to the host, which `cc_trace
+live` parses directly. So the same Pro plan that runs the Mac-side benchmarks now
+drives containerized ones too — no API key, no Keychain hack.
+
+| task | solved | calls | top tool | purity | cache% | decode | sequence |
+|---|:---:|---:|---|---:|---:|---:|---|
+| fix-permissions | ✓ | 4 | Bash | 1.00 | 0.95 | 0.001 | `EEXX` |
+| openssl-selfsigned-cert | ✓ | 7 | Bash | 1.00 | 0.96 | 0.007 | `XXXXXXX` |
+| sqlite-db-truncate | ✓ | 5 | Bash | 0.80 | 0.93 | 0.001 | `XEXXE` |
+| fix-git | ✗ | 5 | Bash | 1.00 | 0.94 | 0.001 | `XXXXX` |
+| nginx-request-logging | ✗ | 7 | Bash | 1.00 | 0.96 | 0.008 | `EXXXXXX` |
+| configure-git-webserver | ✗ | 22 | Bash | 0.95 | 0.97 | 0.011 | `EEXX…EXXXX` |
+
+- **This distribution is execute-dominated.** Several runs have *no explore phase at
+  all* (`XXXXX`, `XXXXXXX`) — the agent goes straight to acting. That's the opposite of
+  the refactor profile (front-loaded `EEEE…XXXX`): sysadmin goals are concrete, so
+  there's little codebase to map first. **Bash is the top tool on every task.**
+- **Decode-intensity is near zero** (0.001–0.011, vs 0.35–7.5 for code tasks). These
+  are command-dispatch workloads — lots of cached prefill, little generated output —
+  which sharpens finding 4: decode tracks *generation effort*, and shell work barely
+  generates.
+- **KV-cache reuse still holds universally** (0.93–1.00), exactly as in every other
+  distribution — the most robust finding, now across three task families.
+- **No interleaving appeared, even on the unsolved tasks.** The longest run
+  (configure-git-webserver, 22 calls, unsolved) shows only a mild late-explore re-entry
+  (purity 0.95), not the long-debug reproduce→hypothesize loop. Consistent with finding
+  7: interleaving needs *diagnostic difficulty*, which short well-scoped shell tasks
+  don't supply.
+
+*Caveat:* replaying a captured `stream-json` gives reliable **phase/sequence, token,
+cache, and call-count** metrics but **not wall-clock timing** (event timestamps
+collapse on replay), so time-based separation is omitted here; purity (order-based) is
+unaffected. Six tasks, one model — directional, like the rest.
+
 ## Limitations (read before citing)
 
 - **The decisive corners are n=2.** Short-debug and long-refactor are each two runs
@@ -356,4 +408,17 @@ scripts/profile_task.sh --prompt-file tasks/02-search-refactor.md
 
 # …then roll your runs up into the comparison view
 python3 -m cc_trace compare reports/*.json -o reports/compare.html
+```
+
+Terminal-Bench (finding 9), Claude Code on a $20 Pro plan, no API key:
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password \
+  -s "Claude Code-credentials" -w | python3 -c \
+  'import json,sys;print(json.load(sys.stdin)["claudeAiOauth"]["accessToken"])')
+PYTHONPATH=scripts tb run -d terminal-bench-core -t fix-permissions \
+  --agent-import-path terminal_bench_agent:OAuthClaudeCodeAgent
+# profile the captured stream-json:
+cat runs/*/fix-permissions/*/sessions/cc.stream.jsonl \
+  | python3 -m cc_trace live - -o reports/tb-fix-permissions.html --json
 ```

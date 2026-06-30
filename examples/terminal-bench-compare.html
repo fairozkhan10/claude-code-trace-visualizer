@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code Trace — compare</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --txt:#e6edf3;
+    --muted:#8b949e; --explore:#3fb950; --execute:#f0883e; --accent:#58a6ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { padding:24px 28px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 4px; font-size:20px; }
+  .sub { color:var(--muted); font-size:13px; }
+  main { padding:20px 28px 60px; max-width:1180px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:18px 20px; margin-bottom:20px; }
+  h2 { margin:0 0 4px; font-size:15px; }
+  .hint { color:var(--muted); font-size:12px; margin:0 0 14px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .seq { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:1px; }
+  .seq i { font-style:normal; }
+  .seq .E { color:var(--explore); }
+  .seq .X { color:var(--execute); }
+  .seq .xover { color:var(--accent); font-weight:700; }
+  .mix { display:flex; height:14px; border-radius:3px; overflow:hidden; min-width:120px; }
+  .mix span { display:block; }
+  .legend { display:flex; gap:16px; font-size:12px; color:var(--muted); margin-top:10px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:2px;
+    margin-right:5px; vertical-align:middle; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Claude Code — run comparison</h1>
+  <div class="sub" id="meta"></div>
+</header>
+<main>
+  <section>
+    <h2>Cross-run metrics</h2>
+    <p class="hint">One row per run. <b>sep</b> = execute_pos − explore_pos: higher
+      means a cleaner explore→execute phase shift; near zero means explore and
+      execute interleave (an explore/act loop). <b>cache%</b> = cache-read share of
+      read tokens — the KV-cache-reuse / decode-dominated signal.</p>
+    <table id="tbl"></table>
+  </section>
+
+  <section>
+    <h2>Phase sequence per run</h2>
+    <p class="hint">Each square is one phased tool call in order — front of the run
+      on the left. Watch whether <span style="color:var(--explore)">explore</span>
+      front-loads before <span style="color:var(--execute)">execute</span>.</p>
+    <div id="seqs"></div>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--explore)"></i>explore / read</span>
+      <span><i class="dot" style="background:var(--execute)"></i>execute / write</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tool mix per run</h2>
+    <p class="hint">Relative share of tool calls by tool — search/read-heavy vs.
+      Bash/edit-heavy.</p>
+    <table id="mix"></table>
+  </section>
+</main>
+
+<script id="data" type="application/json">[{"redundant_calls":0,"redundant_frac":0.0,"net_total":0,"net_kinds":[],"crossover_pos":0.5,"purity":1.0,"crossover_index":2,"label":"fix-permissions","session":"073370f3","n_tool_calls":4,"n_turns":5,"duration":0.00020885467529296875,"cost":0.07746135,"n_errors":1,"n_retry_loops":0,"explore":2,"execute":2,"explore_share":0.5,"tool_mix":{"Bash":3,"Read":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":9,"sequence":"EEXX","explore_pos":0.167,"execute_pos":0.833,"separation":0.666},{"redundant_calls":0,"redundant_frac":0.0,"net_total":0,"net_kinds":[],"crossover_pos":0.0,"purity":1.0,"crossover_index":0,"label":"openssl-selfsigned-cert","session":"bdaa6272","n_tool_calls":7,"n_turns":8,"duration":0.00036787986755371094,"cost":0.12069075,"n_errors":0,"n_retry_loops":0,"explore":0,"execute":7,"explore_share":0.0,"tool_mix":{"Bash":6,"Write":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":82,"sequence":"XXXXXXX","explore_pos":null,"execute_pos":0.5,"separation":null},{"redundant_calls":0,"redundant_frac":0.0,"net_total":0,"net_kinds":[],"crossover_pos":0.2,"purity":0.8,"crossover_index":1,"label":"sqlite-db-truncate","session":"6be9a1cf","n_tool_calls":5,"n_turns":6,"duration":0.0005991458892822266,"cost":0.1088406,"n_errors":1,"n_retry_loops":0,"explore":2,"execute":3,"explore_share":0.4,"tool_mix":{"Bash":5},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":19,"sequence":"EXXXE","explore_pos":0.5,"execute_pos":0.5,"separation":0.0},{"redundant_calls":0,"redundant_frac":0.0,"net_total":0,"net_kinds":[],"crossover_pos":0.0,"purity":1.0,"crossover_index":0,"label":"fix-git","session":"f4f727a4","n_tool_calls":5,"n_turns":6,"duration":0.0003247261047363281,"cost":0.1054881,"n_errors":1,"n_retry_loops":0,"explore":0,"execute":5,"explore_share":0.0,"tool_mix":{"Bash":5},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":15,"sequence":"XXXXX","explore_pos":null,"execute_pos":0.5,"separation":null},{"redundant_calls":0,"redundant_frac":0.0,"net_total":4,"net_kinds":[{"kind":"package","count":2},{"kind":"http","count":2}],"crossover_pos":0.143,"purity":1.0,"crossover_index":1,"label":"nginx-request-logging","session":"f3616339","n_tool_calls":7,"n_turns":8,"duration":0.0003848075866699219,"cost":0.12079665,"n_errors":0,"n_retry_loops":0,"explore":1,"execute":6,"explore_share":0.143,"tool_mix":{"Bash":6,"Write":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":89,"sequence":"EXXXXXX","explore_pos":0.0,"execute_pos":0.583,"separation":0.583},{"redundant_calls":1,"redundant_frac":0.045,"net_total":10,"net_kinds":[{"kind":"git","count":7},{"kind":"package","count":2},{"kind":"http","count":1}],"crossover_pos":0.091,"purity":0.955,"crossover_index":2,"label":"configure-git-webserver","session":"e47b6556","n_tool_calls":22,"n_turns":23,"duration":0.0013532638549804688,"cost":0.37332719999999997,"n_errors":3,"n_retry_loops":1,"explore":3,"execute":19,"explore_share":0.136,"tool_mix":{"Bash":20,"Write":2},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":282,"sequence":"EEXXXXXXXXXXXXXXXEXXXX","explore_pos":0.286,"execute_pos":0.534,"separation":0.248}]</script>
+<script>
+const R = JSON.parse(document.getElementById('data').textContent);
+const fmt = (v,nd=2)=> v==null ? '—' : (typeof v==='number' ? (Number.isInteger(v)?v:v.toFixed(nd)) : v);
+document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':'s'} compared`;
+
+// ---- metrics table ----
+(function(){
+  const cols=[['run','label'],['calls','n_tool_calls'],['turns','n_turns'],
+    ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],['loops','n_retry_loops'],
+    ['redun%','redundant_frac'],
+    ['expl%','explore_share'],['sep','separation'],['pure','purity'],
+    ['cache%','cache_read_share'],['net','net_total'],['top tool','top_tool']];
+  let s=`<tr>${cols.map(([h],i)=>`<th class="${i?'num':''}">${h}</th>`).join('')}</tr>`;
+  s+=R.map(r=>`<tr>${cols.map(([h,k],i)=>{
+    let v=r[k];
+    if(k==='duration') v=v.toFixed(0);
+    else if(k==='cost') v=v.toFixed(2);
+    else v=fmt(v);
+    return `<td class="${i?'num':''}">${v}</td>`;
+  }).join('')}</tr>`).join('');
+  document.getElementById('tbl').innerHTML=s;
+})();
+
+// ---- phase sequences (with '|' marking the explore→execute crossover) ----
+(function(){
+  document.getElementById('seqs').innerHTML = R.map(r=>{
+    const raw=r.sequence||'', k=r.crossover_index;
+    const cells=raw.split('').map((ch,i)=>
+      (k!=null && i===k ? '<i class="xover">|</i>' : '') + `<i class="${ch}">${ch}</i>`).join('')
+      + (k!=null && k===raw.length ? '<i class="xover">|</i>' : '');
+    return `<div style="margin:8px 0"><div style="color:var(--muted);font-size:12px">${r.label} `+
+      `· sep ${fmt(r.separation)} · purity ${fmt(r.purity)} · n=${raw.length}</div>`+
+      `<div class="seq">${cells||'(no phased calls)'}</div></div>`;
+  }).join('');
+})();
+
+// ---- tool mix ----
+(function(){
+  const names=[...new Set(R.flatMap(r=>Object.keys(r.tool_mix||{})))];
+  const palette=['#58a6ff','#f0883e','#3fb950','#a371f7','#db61a2','#e3b341','#8b949e'];
+  const color=n=>palette[names.indexOf(n)%palette.length];
+  let s=`<tr><th>run</th><th>mix</th><th class="num">total</th></tr>`;
+  s+=R.map(r=>{
+    const mix=r.tool_mix||{}, total=Object.values(mix).reduce((a,b)=>a+b,0)||1;
+    const bar=Object.entries(mix).sort((a,b)=>b[1]-a[1]).map(([n,c])=>
+      `<span title="${n}: ${c}" style="width:${100*c/total}%;background:${color(n)}"></span>`).join('');
+    const lbl=Object.entries(mix).sort((a,b)=>b[1]-a[1]).map(([n,c])=>`${n} ${c}`).join(' · ');
+    return `<tr><td>${r.label}</td><td><div class="mix">${bar}</div>`+
+      `<div style="color:var(--muted);font-size:11px;margin-top:3px">${lbl}</div></td>`+
+      `<td class="num">${total}</td></tr>`;
+  }).join('');
+  document.getElementById('mix').innerHTML=s;
+  const legend=names.map(n=>`<span><i class="dot" style="background:${color(n)}"></i>${n}</span>`).join('');
+  document.getElementById('mix').insertAdjacentHTML('afterend',`<div class="legend">${legend}</div>`);
+})();
+</script>
+</body>
+</html>

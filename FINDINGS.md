@@ -35,6 +35,12 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
   (shell/sysadmin), the workload is *execute-dominated* (often no explore phase at all),
   Bash-only, with near-zero decode — while KV-cache reuse stays universal. Phase
   structure is task-shaped, now shown across refactor, debug, and sysadmin work.
+- **Even a benchmark's *hardest* bugs only bend the phase shift — and the reason is
+  structural.** Two SWE-bench Verified instances rated 1–4 hrs land *between* the
+  clean and interleaved regimes (purity 0.80/0.89) — because SWE-bench-style
+  fail-to-pass tests are written against the fix and *leak the diagnosis*. The fully
+  interleaved loop needs symptom-only debugging, which benchmark test patches
+  structurally can't supply.
 
 The middle finding is the interesting one, and it took two wrong turns to get
 right (see finding 2). Below is how we got there.
@@ -384,6 +390,51 @@ cache, and call-count** metrics but **not wall-clock timing** (event timestamps
 collapse on replay), so time-based separation is omitted here; purity (order-based) is
 unaffected. Six tasks, one model — directional, like the rest.
 
+### 10. Hunting the interleaved corner on SWE-bench Verified — it bends, doesn't break
+
+Finding 7 left one corner unelicited on a standard benchmark: the long-debug
+**interleaved** regime (purity 0.68–0.76), which we'd only produced on our own
+hand-built tasks. Hypothesis: **SWE-bench Verified**'s harder bugs (it ships a
+human difficulty rating) would supply the missing *diagnostic* difficulty. We
+filtered all 500 Verified instances to the 17 that are both hard (rated ≥ 1–4 hrs)
+and bare-metal-runnable (pure-Python repo, no Docker), picked the two whose bug
+reports are pure *symptom* — no fault location named, no traceback — and ran them
+through the same harness (fixture verified red before any agent spend; Opus; same
+era-correct-interpreter rules as finding 7).
+
+| instance | human rating | solved | calls | dur (s) | purity | cache% | redundant | sequence |
+|---|---|:---:|---:|---:|---:|---:|---:|---|
+| `sympy__sympy-16597` (`is_even` ⇏ `is_finite`) | 1–4 hrs | ✓ | 18 | 281 | **0.89** | 0.94 | 44% | `EEEEEEXEXXXEXXXXXX` |
+| `pytest-dev__pytest-10356` (marks lost under MRO) | 1–4 hrs | ✓ | 10 | 52 | **0.80** | 0.91 | 30% | `EEEEXXXEEX` |
+
+- **Both land *between* the bands.** Purity 0.80/0.89 sits below every clean Lite
+  run (0.92–1.00) but above the interleaved regime (0.68–0.76). Verified-hard bugs
+  bend the phase shift — mid-execute explore returns, a `git stash` baseline check,
+  the highest redundant-work fractions we've measured (44%!) — but don't dissolve
+  it. The 2×2's "interleaving tracks diagnostic difficulty" claim gains two
+  mid-gradient points: it's a **continuum**, not a clean/interleaved dichotomy.
+- **Why the corner resists elicitation here — the benchmark format leaks the
+  diagnosis.** SWE-bench hands the agent the FAIL_TO_PASS tests, and those tests
+  are *written against the fix*: pytest-10356's test body literally calls
+  `get_unpacked_marks`, the function the fix modifies. Opus read the failing test
+  (call 2) and grepped straight for the fix site (call 3) — no
+  reproduce→hypothesize loop required, because the hypothesis is in the test. Any
+  failing-tests-in-prompt setup inherits this shortcut. The full interleaved regime
+  seems to need *symptom-only* debugging where nothing names the subsystem — which
+  is exactly what our hand-built tasks were, and what benchmark test patches
+  structurally can't be.
+- **The rest of the profile behaves as the other nine findings predict:** cache%
+  0.91–0.94 (universal band, give or take a short run), decode share 30% on the
+  18-call sympy run (top of the debug band, finding 4's effort scaling), Bash the
+  top tool, zero retry loops.
+
+*Caveats:* n=2, one model, both solved — no unsolved-hard contrast yet. The two
+fixtures each needed an env repair **before** the agent ran (sympy 1.5's test shim
+wants the standalone `py` package; pytest 7.2 collapses under py3.12's `ast.Str`
+removal — both caught by the red-check, zero agent spend on either), so the
+harness's abort-if-not-red valve is doing real work: an uncaught false-red would
+have measured *environment repair*, not debugging.
+
 ## Limitations (read before citing)
 
 - **The decisive corners are n=2.** Short-debug and long-refactor are each two runs
@@ -408,6 +459,16 @@ scripts/profile_task.sh --prompt-file tasks/02-search-refactor.md
 
 # …then roll your runs up into the comparison view
 python3 -m cc_trace compare reports/*.json -o reports/compare.html
+```
+
+SWE-bench Lite/Verified (findings 7 & 10) — fixture is verified red before any
+agent spend; rows pages come from the HF datasets-server (see `--rows`):
+
+```bash
+python3 scripts/swebench_run.py sympy__sympy-16597 --py python3.9 \
+  --rows /tmp/verified_*.json            # setup + red-check only
+python3 scripts/swebench_run.py sympy__sympy-16597 --py python3.9 \
+  --rows /tmp/verified_*.json --keep --model opus --run   # + drive & profile
 ```
 
 Terminal-Bench (finding 9), Claude Code on a $20 Pro plan, no API key:

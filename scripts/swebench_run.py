@@ -43,6 +43,11 @@ INSTALL = {
     "pallets/flask": ["pip install -e .", "pip install 'pytest>=7,<8'"],
     "psf/requests": ["pip install -e .",
                      "pip install 'pytest>=7,<8' 'urllib3<2' chardet idna certifi"],
+    # sympy's own test shim does `py.test.mark.xfail` — needs the standalone
+    # `py` package (its lazy py.test alias), or collection errors mask the bug.
+    "sympy/sympy": ["pip install -e .", "pip install 'pytest>=7,<8' py"],
+    # the repo under test IS pytest — installing PyPI pytest would overwrite it
+    "pytest-dev/pytest": ["pip install -e ."],
 }
 DEFAULT_INSTALL = ["pip install -e .", "pip install 'pytest>=7,<8'"]
 
@@ -59,9 +64,9 @@ def load_instance(instance_id: str, rows_files: list[str]) -> dict:
         for row in json.load(open(rf)).get("rows", []):
             if row["row"].get("instance_id") == instance_id:
                 return row["row"]
-    # fall back to the datasets-server API
+    # fall back to the datasets-server API (works for SWE-bench_Lite and _Verified)
     url = ("https://datasets-server.huggingface.co/rows?dataset=princeton-nlp/"
-           "SWE-bench_Lite&config=default&split=test&offset=0&length=100")
+           "SWE-bench_Verified&config=default&split=test&offset=0&length=100")
     raise SystemExit(f"{instance_id} not in {rows_files}; fetch its page from {url}")
 
 

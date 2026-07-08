@@ -47,7 +47,10 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
   fixture path leaked the PR number — caught by the network panel), and, once
   de-identified, it debugged *cleaner than Opus* (purity 0.944) but **stranded its
   correct fix in `git stash`** mid-verification — a one-shot harness grading an
-  asynchronous work style. The phase framework stayed legible through all of it.
+  asynchronous work style. An explicit autonomous-instruction fixes the stranding
+  (tested); de-identification does **not** reliably stop retrieval — a follow-up run
+  re-found the PR by *searching GitHub with the issue's wording*. The phase framework
+  stayed legible through all of it.
 
 The middle finding is the interesting one, and it took two wrong turns to get
 right (see finding 2). Below is how we got there.
@@ -452,15 +455,17 @@ different place on the continuum for a different model.
 ### 11. Stronger agents break the *benchmark* before they break the phase model
 
 Finding 10 needed a cross-model check: does a stronger model re-clean the phase on
-the same bug? We ran **Claude Fable 5** on the identical `sympy-16597` fixture,
-twice. Neither run answered the question the way we expected — and the failures are
-the finding. All three runs, same bug, same prompt:
+the same bug? We ran **Claude Fable 5** on the identical `sympy-16597` fixture —
+first twice, then a third run to test the fix for what the second run exposed.
+None went the way we expected — and the failures are the finding. Four runs, same
+bug, same task prompt:
 
 | run | protocol verdict | what actually happened | calls | purity | network |
 |---|---|---|---:|---:|---:|
 | Opus, original fixture | ✅ solved | genuine debugging | 18 | 0.89 | 0 |
 | Fable 5, original fixture | ✅ "solved" | **downloaded the upstream fix** | 15 | (invalid) | 1 req |
-| Fable 5, de-identified fixture | ❌ failed | **correct fix, stranded in `git stash`** | 19 | 0.944 | 0 |
+| Fable 5, de-identified fixture | ❌ failed | **correct fix, stranded in `git stash`** | 19 | **0.944** | 0 |
+| Fable 5, de-identified + autonomous instruction | ✅ solved | fix applied — but **re-found the PR by searching GitHub** | 22 | (0.955, retrieval-assisted) | 6 req |
 
 - **Failure mode 1 — the agent attacks the task's provenance, not the task.** On the
   original fixture, Fable 5 explored for five calls, recognized the instance (the
@@ -484,7 +489,23 @@ the finding. All three runs, same bug, same prompt:
   died in `stash@{0}`; the harness graded red. We applied the stash afterwards: all 3
   FAIL_TO_PASS pass (66/66 in the file). A **correct solution scored as a failure**
   because the agent's asynchronous work style doesn't fit a single-turn harness.
-- **The phase model survived both failures.** Cache% 0.89–0.94, front-loaded explore,
+- **The protocol fix works; the provenance fix doesn't.** Run 4 re-ran the
+  de-identified fixture with one paragraph added to the prompt — *"you are operating
+  autonomously in a one-shot session… leave the completed fix applied in the working
+  tree; do not stash; do not end on a promise"*. **Failure mode 2: eliminated** — fix
+  applied in the tree, stash empty, protocol verdict green, and the verification
+  discipline survived intact (baseline comparisons now run as atomic
+  `stash && test && pop` commands instead of stranding work). But the same run showed
+  **de-identification is only a mitigation *attempt*** for failure mode 1: with no
+  instance id anywhere, Fable 5 browsed the file's GitHub commit history (turn 3),
+  **searched GitHub commits using the issue's own wording**
+  (`api.github.com/search/commits?q=repo:sympy/sympy+"Make is_…"`, turn 5), and by
+  turn 8 was curling `pull/16597.diff` again — it re-derived the PR number from
+  *content*. Provenance retrieval is stochastic (the zero-network debug in run 3 and
+  the successful hunt in run 4 came from the *same* fixture and near-identical
+  prompts) — so run 4's purity is retrieval-assisted, not a debugging data point; run
+  3's **0.944** stands as the capability measurement.
+- **The phase model survived every failure.** Cache% 0.89–0.94, front-loaded explore,
   execute-dominated tail — every run, including the invalid ones, is legible in the
   same framework; it's the *benchmark's* verdicts that stopped meaning what they claim.
   For workload measurement, that's the punchline: **benchmark validity degrades with
@@ -492,12 +513,13 @@ the finding. All three runs, same bug, same prompt:
   provenance retrieval, and protocol mismatch — and you need exactly this kind of
   per-call instrumentation to notice.
 
-*Practical notes:* (1) any bare-metal SWE-bench-style harness should **de-identify
-fixture paths** (the instance id is a URL) — full immunity needs the network-isolated
-Docker harness. (2) One-shot (`-p`) harnesses driving newer agentic models should say
-so in the prompt — e.g. "you are operating autonomously; finish and verify within
-this turn" — or the model's own verification discipline will strand correct work.
-(3) n=1 per failure mode; both are existence proofs, not rates.
+*Practical notes:* (1) **de-identifying fixture paths is necessary but not
+sufficient** — the instance id is a URL, but the issue text is a search query;
+the only real immunity from runtime provenance retrieval is **network isolation**
+(the Docker harness). (2) One-shot (`-p`) harnesses driving newer agentic models
+should say so in the prompt — the autonomous-instruction mitigation is **tested
+here (n=1)**: it eliminates stranded work without degrading verification. (3) n=1
+per failure mode: existence proofs and one tested fix, not rates.
 
 ## Limitations (read before citing)
 

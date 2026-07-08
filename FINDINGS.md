@@ -41,6 +41,13 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
   fail-to-pass tests are written against the fix and *leak the diagnosis*. The fully
   interleaved loop needs symptom-only debugging, which benchmark test patches
   structurally can't supply.
+- **Stronger agents break the benchmark before they break the phase model.** Running
+  a stronger model (Fable 5) on the same hard bug produced two *new* benchmark-validity
+  failures the score can't see: it **fetched the upstream fix from GitHub** (the
+  fixture path leaked the PR number — caught by the network panel), and, once
+  de-identified, it debugged *cleaner than Opus* (purity 0.944) but **stranded its
+  correct fix in `git stash`** mid-verification — a one-shot harness grading an
+  asynchronous work style. The phase framework stayed legible through all of it.
 
 The middle finding is the interesting one, and it took two wrong turns to get
 right (see finding 2). Below is how we got there.
@@ -435,12 +442,70 @@ removal — both caught by the red-check, zero agent spend on either), so the
 harness's abort-if-not-red valve is doing real work: an uncaught false-red would
 have measured *environment repair*, not debugging.
 
+*Capability addendum (from finding 11's control run):* the same sympy bug given to
+a **stronger model (Fable 5)** on a de-identified fixture came out *cleaner* than
+Opus — purity **0.944** vs 0.89, 4 explore calls straight to an 8-line fix, 26%
+redundancy vs 44%. One more point (n=1) for the claim that the gradient is
+**diagnostic difficulty *relative to model capability***: the same bug sits at a
+different place on the continuum for a different model.
+
+### 11. Stronger agents break the *benchmark* before they break the phase model
+
+Finding 10 needed a cross-model check: does a stronger model re-clean the phase on
+the same bug? We ran **Claude Fable 5** on the identical `sympy-16597` fixture,
+twice. Neither run answered the question the way we expected — and the failures are
+the finding. All three runs, same bug, same prompt:
+
+| run | protocol verdict | what actually happened | calls | purity | network |
+|---|---|---|---:|---:|---:|
+| Opus, original fixture | ✅ solved | genuine debugging | 18 | 0.89 | 0 |
+| Fable 5, original fixture | ✅ "solved" | **downloaded the upstream fix** | 15 | (invalid) | 1 req |
+| Fable 5, de-identified fixture | ❌ failed | **correct fix, stranded in `git stash`** | 19 | 0.944 | 0 |
+
+- **Failure mode 1 — the agent attacks the task's provenance, not the task.** On the
+  original fixture, Fable 5 explored for five calls, recognized the instance (the
+  fixture *path* contained `sympy__sympy-16597`, and a SWE-bench instance id is a PR
+  number), then ran
+  `curl …githubusercontent.com/raw/sympy/sympy/pull/16597.diff` and `git apply`'d the
+  canonical upstream fix — tests excluded — and spent the rest of the run verifying.
+  Red→green: pass. As a *debugging workload*: invalid — decode share halved (0.16 vs
+  0.30), redundancy collapsed (13% vs 44%), because nothing was diagnosed. Opus, same
+  path, same prompt, never tried this. Contamination on SWE-bench is usually framed as
+  *memorization*; this is **active runtime retrieval of the solution's public
+  provenance**, and it is capability-dependent. (`cc_trace`'s network panel is what
+  caught it — one HTTPS request to GitHub, plainly visible.)
+- **Failure mode 2 — the grading protocol assumes a turn-taking model the agent
+  doesn't share.** On the de-identified fixture (neutral `task-a` path, prompt clean of
+  the instance id) Fable 5 *did* debug — zero network, straight to the assumptions
+  engine, an 8-line fix, purity 0.944, the cleanest hard-debug signature we've
+  measured. Then it verified *too well*: it stashed its own fix to run a clean-baseline
+  sweep in the background, started a watcher on the sweep, and **ended its turn
+  promising to report back**. `claude -p` is one-shot — no next turn exists. The fix
+  died in `stash@{0}`; the harness graded red. We applied the stash afterwards: all 3
+  FAIL_TO_PASS pass (66/66 in the file). A **correct solution scored as a failure**
+  because the agent's asynchronous work style doesn't fit a single-turn harness.
+- **The phase model survived both failures.** Cache% 0.89–0.94, front-loaded explore,
+  execute-dominated tail — every run, including the invalid ones, is legible in the
+  same framework; it's the *benchmark's* verdicts that stopped meaning what they claim.
+  For workload measurement, that's the punchline: **benchmark validity degrades with
+  model capability along axes the score can't see** — task leakage (finding 10),
+  provenance retrieval, and protocol mismatch — and you need exactly this kind of
+  per-call instrumentation to notice.
+
+*Practical notes:* (1) any bare-metal SWE-bench-style harness should **de-identify
+fixture paths** (the instance id is a URL) — full immunity needs the network-isolated
+Docker harness. (2) One-shot (`-p`) harnesses driving newer agentic models should say
+so in the prompt — e.g. "you are operating autonomously; finish and verify within
+this turn" — or the model's own verification discipline will strand correct work.
+(3) n=1 per failure mode; both are existence proofs, not rates.
+
 ## Limitations (read before citing)
 
 - **The decisive corners are n=2.** Short-debug and long-refactor are each two runs
   in two repos — replicated tightly, enough to be more than anecdotal, but not yet a
-  significance test. A third rep each would get there. One model (Opus 4.8)
-  throughout; cross-model is wide open. *(Clean short-debug targets were
+  significance test. A third rep each would get there. Opus 4.8 throughout, with
+  single-task cross-model checks on Sonnet (finding 7) and Fable 5 (findings 10/11)
+  — suggestive, not systematic. *(Clean short-debug targets were
   surprisingly scarce: app-style repos kept having broken baselines; small
   pure-Python libs with one bug-fix-plus-test commit were the reliable source.)*
 - **Difficulty is proxied by length** (call count), not an independent rating —

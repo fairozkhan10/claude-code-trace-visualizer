@@ -58,6 +58,67 @@ FINDINGS.md table. Report only discrepancies with file and number. Don't edit FI
 
 ---
 
+## Codebase-wide upgrades (Fable 5 as a builder, not just a research driver)
+
+The templates above drive *research runs*. This section is for using Fable 5 to make
+**significant upgrades to the `cc_trace/` tool itself** — the use case the Anthropic guide
+calls Fable 5's strongest ("apply it to your hardest unsolved problems; start at the top of
+your difficulty range"). Set **effort = high** (`xhigh` for a change that touches the whole
+package at once).
+
+### Step 1 — let Fable scope it (don't hand it a small diff)
+
+Per the guide's "start at the top of your difficulty range": give it the ambitious goal and
+have it scope + ask clarifying questions *before* writing code.
+
+```text
+I'm building cc_trace, the measurement layer for my summer agentic-workload research with
+Shawn (UW–Madison). I want to make a significant upgrade to the tool as a whole, not a patch:
+<the ambitious goal>. Read the codebase (cc_trace/parser.py, report.py, flame.py, compare.py,
+stream.py, cli.py) and the memory dir first. Then scope the change: what you'd touch, the
+design trade-offs, what could break the existing findings, and any open questions for me.
+Ask before you start building. Don't write code yet — give me the plan and a recommendation.
+```
+
+### Step 2 — the build prompt (paste alongside the steering block)
+
+Add this to the steering block so a whole-package change doesn't sprawl (Anthropic's
+anti-over-engineering block, kept intact — it matters most on big changes at high effort):
+
+```text
+Don't add features, refactor, or introduce abstractions beyond what the task requires. A bug
+fix doesn't need surrounding cleanup and a one-shot operation usually doesn't need a helper.
+Don't design for hypothetical future requirements: do the simplest thing that works well.
+Avoid premature abstraction and half-finished implementations. Don't add error handling,
+fallbacks, or validation for scenarios that cannot happen. Trust internal code and framework
+guarantees. Only validate at system boundaries. Keep it stdlib-only — no new deps.
+```
+
+### Step 3 — verify as it builds (fresh-context subagents beat self-critique)
+
+```text
+Establish a way to check your own work as you go. After each module you change, spin a fresh
+subagent to verify it against the spec: run cc_trace end to end on examples/ and on a real
+transcript, confirm the numbers in FINDINGS.md still reproduce (purity/sep/cache%/decode-share
+unchanged unless the change intends to change them), and confirm no personal paths leak into
+committed files. Report only what a tool result backs up.
+```
+
+### Step 4 — parallel subagents for a multi-module change
+
+```text
+Delegate independent subtasks to subagents and keep working while they run. Intervene if a
+subagent goes off track or is missing relevant context.
+```
+
+**Candidate upgrades worth Fable 5 (finding-sized, per the model-selection policy):** the
+automated test suite (none exists — the longest-standing robustness gap, top-value if others
+build on cc_trace); network-isolated Docker harness for provenance-clean SWE-bench runs
+(closes finding 11's retrieval leak); the hand-built E/G/D long-debug cross-model lane.
+Routine parser fixes / report tweaks stay on Sonnet.
+
+---
+
 ## Guardrails while prompting Fable 5
 
 - **Don't** write "show your reasoning" / "explain your thinking" — trips the

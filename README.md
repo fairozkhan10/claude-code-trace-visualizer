@@ -195,6 +195,20 @@ cc_trace/
 scripts/profile_task.sh   # run a task headless, then profile it
 tasks/                    # fixed benchmark prompts
 examples/                 # a committed example report + json
+tests/                    # unittest suite (stdlib only) — see below
+```
+
+### Tests
+
+The heuristics and metric definitions are pinned by a stdlib-only test suite —
+table-driven cases for the Bash file/network parsing, the per-`message.id`
+token-dedup invariant, purity/crossover math on known sequences, flame-graph
+conservation checks, a golden-metric snapshot of the committed example, and a
+guard that committed artifacts carry no personal data. CI runs it on Python
+3.9 and 3.13.
+
+```bash
+python3 -m unittest discover -s tests
 ```
 
 ## Notes & limitations
@@ -204,5 +218,7 @@ examples/                 # a committed example report + json
 - **Costs are estimates** from list prices in `cc_trace/cost.py`; edit that table
   for current or your own rates.
 - **Heuristic parsing.** File I/O inside an inline `python -c` / `node -e` script,
-  and `sed -i` in-place edits, aren't counted; token totals can double-count if the
-  transcript records per-iteration `usage`. Treat totals as indicative.
+  and `sed -i` in-place edits, aren't counted. Token totals are deduplicated per
+  `message.id` (one assistant message spans several transcript lines that repeat
+  the same usage) and were verified equal to the wire counts via a MITM capture —
+  see FINDINGS finding 5.

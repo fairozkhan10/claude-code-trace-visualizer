@@ -49,8 +49,10 @@ different tool (a sniffer), not a transcript parser, and the limit is stated in 
 UI and docs rather than hidden.
 
 **Maturity:** research-grade and ready to clone-and-use, not productized. The Bash
-parsing is heuristic, there's no automated test suite, and it's single-machine.
-Done for its purpose; not hardened for strangers.
+parsing is heuristic and it's single-machine, but the heuristics and metric
+definitions are now pinned by an automated test suite (`tests/`, stdlib
+`unittest`, run in CI on Python 3.9 and 3.13) — including the token-dedup
+invariant and a golden-metric snapshot of the committed example.
 
 ## What we learned
 

@@ -132,6 +132,13 @@
       }
     ]
   },
+  "validity_audit": {
+    "repo_under_test": null,
+    "repo_source": null,
+    "n_flags": 0,
+    "clean": true,
+    "flags": []
+  },
   "file_graph": {
     "window": 4,
     "nodes": [
@@ -307,7 +314,9 @@
       "file_modes": {},
       "output_chars": 43,
       "turn": 0,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 1,
@@ -328,7 +337,9 @@
           "kind": "git",
           "target": "origin"
         }
-      ]
+      ],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 2,
@@ -348,7 +359,9 @@
       },
       "output_chars": 43,
       "turn": 2,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 3,
@@ -368,7 +381,9 @@
       },
       "output_chars": 43,
       "turn": 3,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 4,
@@ -388,7 +403,9 @@
       },
       "output_chars": 43,
       "turn": 4,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 5,
@@ -404,7 +421,9 @@
       "file_modes": {},
       "output_chars": 244,
       "turn": 5,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 6,
@@ -425,7 +444,9 @@
           "kind": "package",
           "target": "pip install pytest-mock"
         }
-      ]
+      ],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 7,
@@ -446,7 +467,9 @@
           "kind": "http",
           "target": "docs.pytest.org/en/stable/how-to/monkeypatch.html"
         }
-      ]
+      ],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 8,
@@ -466,7 +489,9 @@
       },
       "output_chars": 43,
       "turn": 8,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 9,
@@ -486,7 +511,9 @@
       },
       "output_chars": 43,
       "turn": 9,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 10,
@@ -502,7 +529,9 @@
       "file_modes": {},
       "output_chars": 244,
       "turn": 10,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 11,
@@ -522,7 +551,9 @@
       },
       "output_chars": 43,
       "turn": 11,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 12,
@@ -538,7 +569,9 @@
       "file_modes": {},
       "output_chars": 43,
       "turn": 12,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 13,
@@ -560,7 +593,9 @@
       },
       "output_chars": 43,
       "turn": 13,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     },
     {
       "index": 14,
@@ -580,7 +615,9 @@
       },
       "output_chars": 43,
       "turn": 14,
-      "network": []
+      "network": [],
+      "stash_push": 0,
+      "stash_pop": 0
     }
   ],
   "turns": [

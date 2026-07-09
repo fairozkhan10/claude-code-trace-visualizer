@@ -287,6 +287,26 @@ def _label(name: str, tool_input: dict) -> str:
     return ""
 
 
+# --- Benchmark-validity audit -------------------------------------------------
+# Finding 11 (FINDINGS.md): capable agents can break a benchmark's *validity*
+# without breaking its score — fetching the upstream fix from the task's public
+# provenance (a PR diff, a commit search), or stranding correct work in a `git
+# stash` that a one-shot harness never sees. All three failure modes were first
+# caught by a human reading the network panel and bash history; these detectors
+# make that reading automatic. They emit *flags for human review*, not verdicts
+# — an agent may have a legitimate reason to read a forge PR.
+_SLUG_RE = re.compile(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?=[/\s'\"]|$)")
+# SWE-bench-style instance ids are `org__repo-<PR#>` — their presence in the
+# fixture path or prompt hands the agent the solution's address (finding 11).
+_INSTANCE_ID_RE = re.compile(r"\b([A-Za-z][\w.-]*)__([\w.-]+)-(\d+)\b")
+# URL shapes that address a fix's provenance rather than the code under test.
+_SOLUTION_URL_RE = re.compile(
+    r"/pull/\d+|/commit/[0-9a-f]{6,}|/commits\b|\.diff\b|\.patch\b"
+    r"|api\.github\.com/search|patch-diff\.githubusercontent\.com")
+_STASH_PUSH_RE = re.compile(r"\bgit stash\b(?!\s+(?:pop|apply|list|show|drop|clear))")
+_STASH_POP_RE = re.compile(r"\bgit stash\s+(?:pop|apply)\b")
+
+
 # --- Repeated-work / near-duplicate detection --------------------------------
 # Shawn's optimisation angle: an agent that re-issues the same *or similar*
 # command (re-runs the same test, re-reads the same file) is doing cacheable
@@ -342,6 +362,11 @@ class ToolCall:
     output_chars: int                # size of returned tool_result content
     turn: int                        # which assistant turn issued it
     network: list[dict] = field(default_factory=list)  # [{kind, target}] net ops
+    # git-stash balance, counted from the FULL Bash command at build time (the
+    # 80-char label can truncate the `… && git stash pop` tail of an atomic
+    # baseline check, which would false-positive the stranded-work detector)
+    stash_push: int = 0
+    stash_pop: int = 0
 
 
 @dataclass
@@ -368,6 +393,7 @@ class Trace:
     tool_calls: list[ToolCall] = field(default_factory=list)
     turns: list[Turn] = field(default_factory=list)
     user_prompts: list[str] = field(default_factory=list)
+    repo_hint: Optional[str] = None      # "org/repo" under test (--repo flag)
 
     # ---- derived summaries -------------------------------------------------
     @property
@@ -433,6 +459,87 @@ class Trace:
                         for k, c in sorted(by_kind.items(), key=lambda kv: -kv[1])],
             "requests": reqs,
         }
+
+    def validity_audit(self, repo: Optional[str] = None) -> dict:
+        """Benchmark-validity flags: the finding-11 failure modes, mechanised.
+
+        Three detectors, each a *flag for human review* (not a verdict):
+
+        * **solution_channel** — a network request whose target is shaped like a
+          fix's provenance (a ``/pull/<n>`` or ``/commit/<sha>`` URL, a ``.diff``/
+          ``.patch`` download, a forge commit-search). Severity ``high`` when the
+          repo under test appears in the target, ``warn`` otherwise.
+        * **leak_exposure** — an instance-id-shaped token (``org__repo-<PR#>``)
+          in the fixture ``cwd`` or the prompt: the task is carrying the address
+          of its own solution.
+        * **stranded_work** — more ``git stash`` pushes than ``pop``/``apply``
+          restores: work may have ended the run parked outside the tree, which a
+          one-shot harness grades as a failure.
+
+        The repo under test is taken from ``repo`` (or the ``--repo`` CLI flag),
+        else inferred from an instance id in ``cwd``, else from the run's own
+        ``git``-kind network operations (clone/push URLs).
+        """
+        repo = repo or self.repo_hint
+        repo_source = "flag" if repo else None
+        cwd = self.cwd or ""
+
+        if repo is None:                            # infer: instance id in cwd
+            m = _INSTANCE_ID_RE.search(cwd)
+            if m:
+                repo, repo_source = f"{m.group(1)}/{m.group(2)}", "cwd"
+        if repo is None:                            # infer: git remote ops
+            for tc in self.tool_calls:
+                for op in tc.network:
+                    if op["kind"] != "git":
+                        continue
+                    sm = _SLUG_RE.search(op["target"]) or _SLUG_RE.search(tc.label or "")
+                    if sm:
+                        repo, repo_source = f"{sm.group(1)}/{sm.group(2)}", "git-remote"
+                        break
+                if repo:
+                    break
+
+        flags: list[dict] = []
+
+        # 1. solution-channel network requests
+        for tc in self.tool_calls:
+            hit = None
+            for op in tc.network:
+                if _SOLUTION_URL_RE.search(op["target"]):
+                    hit = op["target"]
+                    break
+            if hit is None and tc.name == "Bash" and _SOLUTION_URL_RE.search(tc.label or ""):
+                hit = tc.label
+            if hit is not None:
+                scoped = bool(repo) and all(part.lower() in hit.lower()
+                                            for part in repo.split("/"))
+                flags.append({"kind": "solution_channel",
+                              "severity": "high" if scoped else "warn",
+                              "index": tc.index,
+                              "detail": hit[:120]})
+
+        # 2. instance-id leak in the fixture path / prompt
+        for where, text in [("cwd", cwd)] + [("prompt", p) for p in self.user_prompts]:
+            m = _INSTANCE_ID_RE.search(text or "")
+            if m:
+                flags.append({"kind": "leak_exposure", "severity": "warn",
+                              "index": None,
+                              "detail": f"instance id {m.group(0)!r} in {where}"})
+
+        # 3. stranded work in `git stash` (counts come from the full command,
+        # stored on each call at build time — see ToolCall.stash_push)
+        pushes = sum(tc.stash_push for tc in self.tool_calls)
+        pops = sum(tc.stash_pop for tc in self.tool_calls)
+        if pushes > pops:
+            flags.append({"kind": "stranded_work", "severity": "warn",
+                          "index": None,
+                          "detail": f"{pushes} git stash push(es) vs {pops} "
+                                    f"pop/apply — work may end the run stashed"})
+
+        flags.sort(key=lambda f: (f["severity"] != "high", f["kind"]))
+        return {"repo_under_test": repo, "repo_source": repo_source,
+                "n_flags": len(flags), "clean": not flags, "flags": flags}
 
     def phase_counts(self) -> dict[str, int]:
         out = {"explore": 0, "execute": 0, "other": 0}
@@ -634,6 +741,7 @@ class Trace:
             "tool_breakdown": self.tool_breakdown(),
             "file_access": self.file_access(),
             "network_activity": self.network_activity(),
+            "validity_audit": self.validity_audit(),
             "file_graph": self.file_graph(),
             "phase_crossover": self.phase_crossover(),
             "retry_loops": self.retry_loops(),
@@ -716,6 +824,7 @@ class _Builder:
                 tin = c.get("input", {}) if isinstance(c.get("input"), dict) else {}
                 ops = _file_ops(name, tin)
                 net = _tool_network(name, tin)
+                cmd = tin.get("command", "") if name == "Bash" else ""
                 tc = ToolCall(
                     index=self.call_idx,
                     id=c.get("id", f"call-{self.call_idx}"),
@@ -731,6 +840,8 @@ class _Builder:
                     output_chars=0,
                     turn=self.turn_idx - 1,       # this message's turn (just appended above)
                     network=[{"kind": k, "target": t} for k, t in net],
+                    stash_push=len(_STASH_PUSH_RE.findall(cmd)),
+                    stash_pop=len(_STASH_POP_RE.findall(cmd)),
                 )
                 self.pending[tc.id] = tc
                 self.tool_calls.append(tc)

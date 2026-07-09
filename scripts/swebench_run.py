@@ -194,8 +194,11 @@ def main() -> int:
     rep = Path(args.reports_dir)
     rep.mkdir(parents=True, exist_ok=True)
     stem = f"swe-{args.instance_id}" + (f"-{args.model}" if args.model else "")
+    # pass the instance's upstream repo so the benchmark-validity audit is
+    # scoped (provenance retrieval against *this* repo flags as high severity)
     sh(f"cd {shlex.quote(str(REPO_ROOT))} && python3 -m cc_trace {shlex.quote(str(tr))} "
-       f"-o {shlex.quote(str(rep / (stem + '.html')))} --json", check=False)
+       f"-o {shlex.quote(str(rep / (stem + '.html')))} --json "
+       f"--repo {shlex.quote(inst['repo'])}", check=False)
     sh(f"cd {shlex.quote(str(REPO_ROOT))} && python3 -m cc_trace flame {shlex.quote(str(tr))} "
        f"--view time -o {shlex.quote(str(rep / (stem + '-flame.html')))}", check=False)
     print(f"\nDone. transcript={tr}\n  reports/{stem}.html  reports/{stem}-flame.html  "

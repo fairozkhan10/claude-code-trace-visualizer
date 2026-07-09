@@ -206,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="also write the parsed trace as <out>.json")
     ap.add_argument("--open", action="store_true",
                     help="open the report in a browser when done")
+    ap.add_argument("--repo", default=None, metavar="ORG/NAME",
+                    help="repo under test, to scope the benchmark-validity "
+                         "audit (default: inferred from cwd / git remotes)")
     args = ap.parse_args(argv)
 
     if args.list:
@@ -226,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
                  "(try --list)")
     print(f"parsing {path}", file=sys.stderr)
     trace = parse_transcript(str(path))
+    trace.repo_hint = args.repo
 
     out = Path(args.out) if args.out else Path(f"{trace.session_id or path.stem}.html")
     if out.parent != Path(""):

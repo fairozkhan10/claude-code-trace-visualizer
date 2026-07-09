@@ -6,7 +6,9 @@ timing, tokens, dollars, network requests, and where it got stuck.
 Point it at a session and it renders one **self-contained, offline HTML
 dashboard**: a timeline of tool calls, a read/explore → execute/write phase view,
 per-turn token & context growth, a tool-call breakdown, a file-access table, a
-**network-activity** panel, a file co-access graph, detected retry loops, a
+**network-activity** panel, a **benchmark-validity audit** (flags an agent
+fetching a fix's provenance, instance-id leaks, and work stranded in `git stash`
+— see FINDINGS finding 11), a file co-access graph, detected retry loops, a
 **repeated-work** panel (identical or near-identical calls the agent re-issues — a
 caching/optimization signal), and an
 errors list. No instrumentation, no services, no dependencies — it just reads the
@@ -133,6 +135,7 @@ Everything below is pulled straight from the transcript — nothing is instrumen
 | Success / failure (retry candidates) | `tool_result.is_error` |
 | Files touched (read vs. write) | tool `file_path` **+ shell redirects / here-docs / `tee` / script runs parsed from Bash** |
 | **Network activity** | curl/wget, git remote ops, package installs, ssh/scp, WebFetch/WebSearch/MCP — parsed from commands & tool inputs |
+| **Benchmark-validity flags** | solution-channel network (PR diffs, commit searches against the repo under test), instance-id leaks in path/prompt, work stranded in `git stash` — the finding-11 failure modes, flagged for review |
 | Tokens (input / output / cache-read / cache-write) | `message.usage` per turn |
 | Context growth | cumulative cache-read + input per turn |
 | Estimated cost (USD) | usage × per-model price table |

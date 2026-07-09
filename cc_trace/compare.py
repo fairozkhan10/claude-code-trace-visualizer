@@ -90,7 +90,9 @@ def summarize(d: dict) -> dict[str, Any]:
     xover = d.get("phase_crossover", {}) or {}
     na = d.get("network_activity", {}) or {}
     rw = d.get("repeated_work", {}) or {}
+    va = d.get("validity_audit", {}) or {}
     return {
+        "validity_flags": va.get("n_flags", 0),
         "redundant_calls": rw.get("redundant_calls", 0),
         "redundant_frac": rw.get("redundant_frac"),
         "net_total": na.get("total", 0),
@@ -139,6 +141,7 @@ def render_text(rows: list[dict]) -> str:
         ("pure", None, lambda r: _fmt(r["purity"])),
         ("cache%", None, lambda r: _fmt(r["cache_read_share"])),
         ("net", None, lambda r: r["net_total"] or "—"),
+        ("flags", None, lambda r: r.get("validity_flags", 0) or "—"),
         ("top tool", None, lambda r: r["top_tool"] or "—"),
     ]
     head = [c[0] for c in cols]
@@ -252,7 +255,8 @@ document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':
     ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],['loops','n_retry_loops'],
     ['redun%','redundant_frac'],
     ['expl%','explore_share'],['sep','separation'],['pure','purity'],
-    ['cache%','cache_read_share'],['net','net_total'],['top tool','top_tool']];
+    ['cache%','cache_read_share'],['net','net_total'],['flags','validity_flags'],
+    ['top tool','top_tool']];
   let s=`<tr>${cols.map(([h],i)=>`<th class="${i?'num':''}">${h}</th>`).join('')}</tr>`;
   s+=R.map(r=>`<tr>${cols.map(([h,k],i)=>{
     let v=r[k];

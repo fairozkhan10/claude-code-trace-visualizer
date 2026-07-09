@@ -152,7 +152,8 @@ class TestTokenTotalsAndCost(unittest.TestCase):
         d = _phase_trace("EEXX").as_dict()
         for key in ("phase_crossover", "phase_counts", "token_totals",
                     "network_activity", "repeated_work", "retry_loops",
-                    "file_access", "file_graph", "tool_breakdown"):
+                    "file_access", "file_graph", "tool_breakdown",
+                    "validity_audit"):
             self.assertIn(key, d)
 
 

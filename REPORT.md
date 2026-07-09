@@ -19,7 +19,9 @@ beyond the brief along the way:
 
 - **Per-session dashboard** — timeline, phase view, token/context growth, tool
   breakdown, file access, network panel, file co-access graph, retry loops,
-  repeated-work clusters (a caching/optimization signal), errors.
+  repeated-work clusters (a caching/optimization signal), errors, and a
+  **benchmark-validity audit** (the finding-11 failure modes — provenance
+  retrieval, instance-id leaks, stranded stashes — flagged automatically).
 - **Cross-run compare** — roll many runs into one table to spot patterns.
 - **Flame graph** — a run stacked `phase → tool → target`, *coloured by the
   explore→execute phase* (interactive HTML, or `.folded` for speedscope/pprof).

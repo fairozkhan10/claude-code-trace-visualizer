@@ -125,6 +125,17 @@ _TEMPLATE = r"""<!doctype html>
   </section>
 
   <section>
+    <h2>Benchmark validity audit</h2>
+    <p class="hint">Flags the capability-dependent benchmark failure modes from
+      FINDINGS finding 11 — <b>solution-channel</b> network (the agent fetching a
+      fix's provenance: PR diffs, commit searches), <b>leak exposure</b> (an
+      instance id in the fixture path/prompt), and <b>stranded work</b> (unbalanced
+      <code>git stash</code>). Flags are cues for human review, not verdicts.</p>
+    <div id="audit-summary" class="hint" style="margin-bottom:10px"></div>
+    <table id="audit"></table>
+  </section>
+
+  <section>
     <h2>File co-access graph</h2>
     <p class="hint">Files touched close together in the run are linked; thicker links =
       worked on together more often. Node size = how often a file is accessed,
@@ -302,6 +313,26 @@ document.getElementById('cards').innerHTML = cards.map(([k,v])=>
     `<td><code>${shorten((r.target||'').replace(/</g,'&lt;'))}</code>${r.error?' <span class="pill err">err</span>':''}</td>`+
     `<td>${r.tool}</td></tr>`).join('');
   document.getElementById('net').innerHTML=s;
+})();
+
+// ---- benchmark validity audit ----
+(function(){
+  const va=T.validity_audit||{flags:[]};
+  const sum=document.getElementById('audit-summary');
+  const repo=va.repo_under_test
+    ? `repo under test: <code>${va.repo_under_test}</code> (${va.repo_source})`
+    : 'repo under test: not identified — solution-channel flags are unscoped';
+  if(!va.flags.length){
+    sum.innerHTML=`No validity flags. 🎉 · ${repo}`;
+    document.getElementById('audit').outerHTML=''; return; }
+  sum.innerHTML=`<b>${va.n_flags}</b> flag${va.n_flags>1?'s':''} · ${repo}`;
+  let s=`<tr><th>severity</th><th>kind</th><th>detail</th><th class="num">at</th></tr>`;
+  s+=va.flags.map(f=>`<tr>`+
+    `<td><span class="pill ${f.severity==='high'?'err':''}" style="${f.severity!=='high'?'border:1px solid var(--muted);color:var(--muted)':''}">${f.severity}</span></td>`+
+    `<td>${f.kind.replace('_',' ')}</td>`+
+    `<td><code>${(f.detail||'').replace(/</g,'&lt;')}</code></td>`+
+    `<td class="num">${f.index==null?'—':'#'+f.index}</td></tr>`).join('');
+  document.getElementById('audit').innerHTML=s;
 })();
 
 // ---- retry loops ----

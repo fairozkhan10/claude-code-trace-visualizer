@@ -519,7 +519,13 @@ the only real immunity from runtime provenance retrieval is **network isolation*
 (the Docker harness). (2) One-shot (`-p`) harnesses driving newer agentic models
 should say so in the prompt — the autonomous-instruction mitigation is **tested
 here (n=1)**: it eliminates stranded work without degrading verification. (3) n=1
-per failure mode: existence proofs and one tested fix, not rates.
+per failure mode: existence proofs and one tested fix, not rates. (4) These
+detections are now **built into the tool**: `cc_trace`'s benchmark-validity audit
+flags solution-channel network, instance-id leaks, and stash-stranded work on
+every profiled run — re-auditing the four transcripts above reproduces this
+table's verdicts exactly (run 1: high-severity provenance flag on the
+`pull/16597` diff; run 3: stranded-work only; run 4: the retrieval hunt, no
+stranding).
 
 ## Limitations (read before citing)
 

@@ -448,7 +448,9 @@ have measured *environment repair*, not debugging.
 *Capability addendum (from finding 11's control run):* the same sympy bug given to
 a **stronger model (Fable 5)** on a de-identified fixture came out *cleaner* than
 Opus — purity **0.944** vs 0.89, 4 explore calls straight to an 8-line fix, 26%
-redundancy vs 44%. One more point (n=1) for the claim that the gradient is
+redundancy vs 44%. The pytest instance replicates it (see finding 11's
+amendment): Fable 5 de-identified purity **0.929** vs Opus's 0.80 on
+`pytest-10356`. Two points (n=2) for the claim that the gradient is
 **diagnostic difficulty *relative to model capability***: the same bug sits at a
 different place on the continuum for a different model.
 
@@ -513,13 +515,27 @@ bug, same task prompt:
   provenance retrieval, and protocol mismatch — and you need exactly this kind of
   per-call instrumentation to notice.
 
+*Amendment — second instance (pytest-10356, de-identified, autonomous):* the
+protocol replicates on finding 10's other instance. Fable 5 on a de-identified
+`pytest-dev__pytest-10356` fixture (neutral `task-b` path, prompt clean of the
+instance id, autonomous instruction appended): **solved**, fix applied in the
+tree, stash empty, **zero validity-audit flags**, and zero provenance retrieval —
+the only network activity was two local `pip install`s building its own test
+venv. 14 calls / 78 s, sequence `EEEXXEXXXXXXXX`, cache 1.0, purity **0.929** vs
+Opus's **0.80** on the identical instance (finding 10). That makes the
+capability-relative gradient **n=2** (sympy: 0.944 vs 0.89; pytest: 0.929 vs
+0.80 — Fable 5 cleaner on both hard-debug instances) and the
+autonomous-instruction mitigation **n=2** (no stranding either time). The clean
+network here doesn't retire failure mode 1 — retrieval is stochastic (run 3 vs
+run 4 above), so a quiet run is consistent, not exculpatory.
+
 *Practical notes:* (1) **de-identifying fixture paths is necessary but not
 sufficient** — the instance id is a URL, but the issue text is a search query;
 the only real immunity from runtime provenance retrieval is **network isolation**
 (the Docker harness). (2) One-shot (`-p`) harnesses driving newer agentic models
 should say so in the prompt — the autonomous-instruction mitigation is **tested
-here (n=1)**: it eliminates stranded work without degrading verification. (3) n=1
-per failure mode: existence proofs and one tested fix, not rates. (4) These
+here (n=2)**: it eliminates stranded work without degrading verification. (3)
+Small n per failure mode: existence proofs and a twice-tested fix, not rates. (4) These
 detections are now **built into the tool**: `cc_trace`'s benchmark-validity audit
 flags solution-channel network, instance-id leaks, and stash-stranded work on
 every profiled run — re-auditing the four transcripts above reproduces this

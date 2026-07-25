@@ -38,7 +38,7 @@ from .parser import _bash_signature
 
 VIEWS = ("calls", "time", "tokens", "files", "net")
 
-_PHASE_COLOR = {"explore": "#4c8bf5", "execute": "#f5894c", "other": "#9aa0a6"}
+_PHASE_COLOR = {"explore": "#3987e5", "execute": "#d95926", "other": "#6c6d75"}
 
 
 def _target(tc) -> str:
@@ -155,29 +155,68 @@ def render_html(traces: list, view: str = "calls", title: str | None = None) -> 
                 .replace("__DATA__", data)
 
 
-_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>__TITLE__</title>
+_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
 <style>
- body{margin:0;background:#0f1115;color:#e6e6e6;font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif}
- header{padding:14px 18px;border-bottom:1px solid #23262d}
- h1{margin:0;font-size:16px}.sub{color:#9aa0a6;font-size:12px;margin-top:4px}
- #legend{margin-top:8px;font-size:12px}.swatch{display:inline-block;width:11px;height:11px;border-radius:2px;margin:0 4px 0 12px;vertical-align:-1px}
- #chart{padding:10px 18px}#reset{cursor:pointer;color:#4c8bf5;margin-left:14px}
- .frame{position:absolute;height:18px;box-sizing:border-box;border:1px solid #0f1115;border-radius:2px;
-        overflow:hidden;white-space:nowrap;font-size:11px;color:#0f1115;padding:1px 4px;cursor:pointer}
- .frame:hover{outline:1px solid #fff}
- #tip{position:fixed;pointer-events:none;background:#000;border:1px solid #444;padding:6px 8px;
-      border-radius:4px;font-size:12px;display:none;max-width:60ch;z-index:9}
+ :root{color-scheme:dark;--page:#0a0a0c;--panel:#141419;--line:rgba(255,255,255,.08);
+   --line-2:rgba(255,255,255,.16);--ink:#f5f5f7;--muted:#8f9099;
+   --explore:#3987e5;--execute:#d95926;--other:#6c6d75;
+   --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+   --ease:cubic-bezier(.22,.8,.24,1)}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--page);color:var(--ink);
+   font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+   -webkit-font-smoothing:antialiased}
+ header{padding:38px 32px 24px;border-bottom:1px solid var(--line);
+   background:radial-gradient(900px 320px at 10% -20%,rgba(57,135,229,.13),transparent 60%),
+              radial-gradient(700px 300px at 95% 130%,rgba(217,89,38,.09),transparent 60%),var(--page)}
+ .eyebrow{font:600 11px/1 var(--mono);letter-spacing:.32em;color:var(--muted);
+   text-transform:uppercase;margin:0 0 12px}
+ .eyebrow b{color:var(--explore);font-weight:600}
+ h1{margin:0;font-weight:800;letter-spacing:-.03em;line-height:1;
+   font-size:clamp(26px,4.5vw,44px);text-transform:uppercase}
+ .sub{color:var(--muted);font:12px/1.7 var(--mono);margin-top:12px}
+ #reset{cursor:pointer;color:var(--explore);margin-left:14px;user-select:none;
+   border:1px solid var(--line);border-radius:999px;padding:3px 12px;
+   transition:border-color .2s,background .2s}
+ #reset:hover{border-color:var(--line-2);background:var(--panel)}
+ #crumb{color:var(--ink);font-weight:600}
+ #legend{margin-top:14px;font-size:12px;color:var(--muted);display:flex;gap:6px;
+   align-items:center;flex-wrap:wrap}
+ .chip{display:inline-flex;align-items:center;gap:7px;padding:4px 11px;
+   border:1px solid var(--line);border-radius:999px}
+ .swatch{display:inline-block;width:10px;height:10px;border-radius:3px}
+ #chart{padding:18px 24px 60px}
+ .frame{position:absolute;height:19px;box-sizing:border-box;border-radius:3px;
+   overflow:hidden;white-space:nowrap;font:600 11px/1.5 var(--mono);color:#0a0a0c;
+   padding:2px 5px;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(10,10,12,.55);
+   transition:left .5s var(--ease),width .5s var(--ease),top .5s var(--ease),
+     filter .15s;animation:fin .45s var(--ease) both}
+ @keyframes fin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+ .frame:hover{filter:brightness(1.25) saturate(1.1);z-index:2}
+ #tip{position:fixed;pointer-events:none;background:rgba(14,14,18,.94);
+   border:1px solid var(--line-2);border-radius:9px;padding:8px 11px;font-size:12px;
+   display:none;max-width:60ch;z-index:9;box-shadow:0 10px 34px rgba(0,0,0,.55);
+   backdrop-filter:blur(8px)}
+ @media (prefers-reduced-motion:reduce){*{transition-duration:.001s!important}
+   .frame{opacity:1}}
 </style></head><body>
-<header><h1>__TITLE__</h1><div class="sub">__SUB__<span id="reset">⟲ reset zoom</span></div>
-<div id="legend">phase:
- <span class="swatch" style="background:#4c8bf5"></span>explore
- <span class="swatch" style="background:#f5894c"></span>execute
- <span class="swatch" style="background:#9aa0a6"></span>other</div>
+<header><p class="eyebrow"><b>&#9679;</b> cc_trace &middot; flame</p>
+<h1>__TITLE__</h1>
+<div class="sub">__SUB__<span id="crumb"></span><span id="reset">&#10226; reset zoom</span></div>
+<div id="legend"><span style="margin-right:4px">phase</span>
+ <span class="chip"><i class="swatch" style="background:var(--explore)"></i>explore</span>
+ <span class="chip"><i class="swatch" style="background:var(--execute)"></i>execute</span>
+ <span class="chip"><i class="swatch" style="background:var(--other)"></i>other</span>
+ <span style="margin-left:8px">click a frame to zoom</span></div>
 </header>
 <div id="chart"></div><div id="tip"></div>
 <script>
-const DATA=__DATA__, COLORS=__COLORS__, UNIT="__UNIT__", ROWH=20;
+const DATA=__DATA__, COLORS=__COLORS__, UNIT="__UNIT__", ROWH=21;
 const chart=document.getElementById('chart'), tip=document.getElementById('tip');
+const crumb=document.getElementById('crumb');
+const REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
 function flatten(node,depth,x0,total,out){
   const w=node.value/total;
   out.push({node,depth,x:x0,w});
@@ -186,25 +225,29 @@ function flatten(node,depth,x0,total,out){
 }
 function draw(root){
   chart.innerHTML='';
+  crumb.textContent = root===DATA ? '' : (' ▸ zoomed: '+root.name+'  ');
   const rows=[]; flatten(root,0,0,root.value,rows);
   const maxd=Math.max(...rows.map(r=>r.depth));
   chart.style.position='relative'; chart.style.height=((maxd+1)*ROWH+4)+'px';
-  const W=chart.clientWidth-36;
-  for(const r of rows){
-    if(r.w*W<0.4) continue;
+  const W=chart.clientWidth-48;
+  rows.forEach((r,i)=>{
+    if(r.w*W<0.4) return;
     const d=document.createElement('div'); d.className='frame';
-    d.style.left=(r.x*W)+'px'; d.style.width=Math.max(1,r.w*W-1)+'px';
+    d.style.left=(r.x*W)+'px'; d.style.width=Math.max(1,r.w*W-1.5)+'px';
     d.style.top=(r.depth*ROWH)+'px';
     d.style.background=COLORS[r.node.phase]||COLORS.other;
     d.textContent=r.node.name;
     const pct=(100*r.node.value/DATA.value).toFixed(1);
-    d.onmousemove=e=>{tip.style.display='block';tip.style.left=(e.clientX+12)+'px';
+    d.onmousemove=e=>{tip.style.display='block';
+      tip.style.left=Math.min(e.clientX+12,innerWidth-320)+'px';
       tip.style.top=(e.clientY+12)+'px';
-      tip.innerHTML='<b>'+r.node.name+'</b><br>'+r.node.value+' '+UNIT+' · '+pct+'% of total';};
+      tip.innerHTML='<b>'+d.textContent.replace(/&/g,'&amp;').replace(/</g,'&lt;')+
+        '</b><br>'+r.node.value+' '+UNIT+' &middot; '+pct+'% of total';};
     d.onmouseleave=()=>tip.style.display='none';
     d.onclick=()=>draw(r.node);
+    if(!REDUCED) d.style.animationDelay=Math.min(r.depth*70+i*4,900)+'ms';
     chart.appendChild(d);
-  }
+  });
 }
 document.getElementById('reset').onclick=()=>draw(DATA);
 draw(DATA); window.addEventListener('resize',()=>draw(DATA));

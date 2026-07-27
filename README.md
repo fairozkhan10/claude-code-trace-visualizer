@@ -122,6 +122,35 @@ Runs Claude Code headless (`claude -p`) on a fixed prompt, then profiles the
 result. See [`tasks/`](tasks/) for the benchmark prompts used to keep runs
 comparable.
 
+### Network-isolated benchmark runs
+
+[Finding 11](FINDINGS.md) found a capable model "solving" a SWE-bench instance
+by downloading the upstream fix, and that de-identifying the fixture doesn't
+stop it — the model re-derived the PR number from the issue text. Only network
+isolation closes that. Full isolation is impossible (the agent needs the model
+API), so this is an **egress allowlist**: the agent runs on an `--internal`
+Docker network with no DNS and no route, reaching the outside only through a
+stdlib proxy that permits the model API and 403s everything else.
+
+```bash
+# 1. build a red, de-identified fixture image (needs network: clone + pip)
+scripts/isolated_setup.sh <fixture-dir> test_infinity test_neg_infinity
+
+# 2. graded run with no egress but the model API
+scripts/isolated_run.sh <prompt-file> opus
+```
+
+The proxy logs every attempt, so `egress.jsonl` records what the agent *tried*
+to fetch — a signal the transcript can't give you, since a blocked request may
+never surface as a tool call. The run also grades `FAIL_TO_PASS`, checks `git
+stash` for finding 11's other failure mode (a correct fix left stranded), and
+profiles the transcript.
+
+Requires Docker and a Claude Code OAuth token — no `ANTHROPIC_API_KEY`; on
+macOS the token is read from the Keychain automatically. Note the agent sees an
+HTTP 403 rather than a black hole, so this measures *retrieval denied*, not
+*retrieval absent*.
+
 ---
 
 ## What it measures
@@ -196,6 +225,9 @@ cc_trace/
   stream.py    # live profiling from --output-format stream-json
   cli.py       # `python3 -m cc_trace` entry point
 scripts/profile_task.sh   # run a task headless, then profile it
+scripts/egress_proxy.py   # stdlib allowlist proxy — logs what an agent tries to fetch
+scripts/isolated_setup.sh # build a red, de-identified SWE-bench fixture image
+scripts/isolated_run.sh   # graded run with no egress but the model API
 tasks/                    # fixed benchmark prompts
 examples/                 # a committed example report + json
 tests/                    # unittest suite (stdlib only) — see below
@@ -206,9 +238,9 @@ tests/                    # unittest suite (stdlib only) — see below
 The heuristics and metric definitions are pinned by a stdlib-only test suite —
 table-driven cases for the Bash file/network parsing, the per-`message.id`
 token-dedup invariant, purity/crossover math on known sequences, flame-graph
-conservation checks, a golden-metric snapshot of the committed example, and a
-guard that committed artifacts carry no personal data. CI runs it on Python
-3.9 and 3.13.
+conservation checks, a golden-metric snapshot of the committed example, the
+egress allowlist's host matching, and a guard that committed artifacts carry no
+personal data. CI runs it on Python 3.9 and 3.13.
 
 ```bash
 python3 -m unittest discover -s tests

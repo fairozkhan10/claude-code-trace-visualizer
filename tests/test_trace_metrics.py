@@ -10,14 +10,14 @@ from cc_trace.parser import Trace, ToolCall, Turn
 
 
 def _tc(i, phase, name="Bash", label="", files=None, modes=None, err=False,
-        start=None, dur=None, net=None, turn=0):
+        start=None, dur=None, net=None, turn=0, signature=""):
     files = files or []
     return ToolCall(
         index=i, id=f"t{i}", name=name, label=label, phase=phase,
         start=start, end=(start + dur) if (start is not None and dur is not None) else None,
         duration=dur, is_error=err, files=files,
         file_modes=modes or {}, output_chars=0, turn=turn,
-        network=net or [],
+        network=net or [], signature=signature,
     )
 
 
@@ -89,6 +89,25 @@ class TestRepeatedWork(unittest.TestCase):
         self.assertEqual(rw["redundant_calls"], 2)
         self.assertEqual(rw["redundant_frac"], 0.5)     # 2 of 4 calls
         self.assertFalse(rw["clusters"][0]["exact"])
+
+    def test_build_time_signature_beats_the_truncated_label(self):
+        # regression: two *different* long commands share their first 80 chars,
+        # so label-derived signatures merged them into one bogus repeat cluster.
+        # The build-time signature sees the full command and keeps them apart.
+        head = ("python -m pytest sympy/core/tests/test_assumptions.py "
+                "sympy/core/tests/test_numbers.py -q ")
+        self.assertGreaterEqual(len(head), 80)
+        a, b = head + "--deselect x/y.py", head + "-k 'test_even' --maxfail 1"
+        self.assertEqual(a[:80], b[:80])
+        calls = [_tc(0, "execute", label=a[:80], signature="Bash:" + a),
+                 _tc(1, "execute", label=b[:80], signature="Bash:" + b)]
+        self.assertEqual(_trace(calls).repeated_work()["n_clusters"], 0)
+
+    def test_label_signature_is_the_fallback(self):
+        # traces parsed before `signature` existed still cluster off the label
+        calls = [_tc(0, "execute", label="pytest tests/a.py"),
+                 _tc(1, "execute", label="pytest tests/b.py")]
+        self.assertEqual(_trace(calls).repeated_work()["n_clusters"], 1)
 
     def test_same_file_reread_clusters(self):
         calls = [_tc(0, "explore", name="Read", files=["a.py"]),

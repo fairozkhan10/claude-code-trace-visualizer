@@ -107,6 +107,43 @@ class TestBashSignature(unittest.TestCase):
         self.assertNotEqual(_bash_signature("pytest -q"),
                             _bash_signature("git status"))
 
+    # --- readable command position (Shawn's ask: show `python PATH > PATH`,
+    # not the raw command and not `PATH PATH > PATH`) ------------------------
+    def test_interpreter_keeps_its_name(self):
+        self.assertEqual(_bash_signature("/tmp/venv/bin/python script.py > out.log"),
+                         "Bash:python PATH > PATH")
+
+    def test_wrapper_and_module_survive(self):
+        self.assertEqual(
+            _bash_signature("timeout 300 /tmp/venv/bin/python -m pytest tests/a.py"),
+            "Bash:timeout N python -m pytest PATH")
+
+    def test_redirections_are_not_numbers(self):
+        self.assertEqual(_bash_signature("pytest -q 2>&1 | tail -20"),
+                         "Bash:pytest -q 2>&1 | tail -N")
+        self.assertEqual(_bash_signature("grep -n x a.py 2>/dev/null"),
+                         "Bash:grep -n x PATH 2>/dev/null")
+
+    def test_globs_collapse_to_path(self):
+        self.assertEqual(_bash_signature("ls sympy/*/tests/test_*.py"),
+                         "Bash:ls PATH")
+
+    def test_path_qualified_binaries_cluster_with_bare_ones(self):
+        self.assertEqual(_bash_signature("/usr/bin/grep -r foo src/a.py"),
+                         _bash_signature("grep -r foo lib/b.py"))
+
+
+class TestClassifyBashPrefixes(unittest.TestCase):
+    def test_wrapper_does_not_hide_a_readonly_command(self):
+        self.assertEqual(_classify_bash("timeout 60 cat notes.md"), "explore")
+
+    def test_path_qualified_readonly_command(self):
+        self.assertEqual(_classify_bash("/usr/bin/grep -r foo src"), "explore")
+
+    def test_wrapped_git_subcommand_still_splits(self):
+        self.assertEqual(_classify_bash("timeout 10 git log"), "explore")
+        self.assertEqual(_classify_bash("timeout 10 git commit -m x"), "execute")
+
 
 class TestBashNetwork(unittest.TestCase):
     def _net(self, cmd):
@@ -140,6 +177,34 @@ class TestBashNetwork(unittest.TestCase):
 
     def test_plain_shell_is_silent(self):
         self.assertEqual(self._net("ls -la && pytest -q"), [])
+
+    # --- wrapper / interpreter prefixes (regression: the isolated run's
+    # `timeout 300 pip install mpmath` reached pypi.org 8x per the egress proxy
+    # while the parser reported zero network activity) -----------------------
+    def test_timeout_wrapper_does_not_hide_install(self):
+        self.assertEqual(self._net("timeout 300 pip install mpmath 2>&1 | tail -20"),
+                         [("package", "pip install mpmath")])
+
+    def test_python_dash_m_pip_is_an_install(self):
+        self.assertEqual(self._net("python -m pip install requests"),
+                         [("package", "pip install requests")])
+
+    def test_path_qualified_interpreter_unwraps(self):
+        self.assertEqual(self._net("/tmp/venv/bin/python -m pip download foo"),
+                         [("package", "pip download foo")])
+
+    def test_timeout_wrapper_does_not_hide_retrieval(self):
+        # the solution_channel detector reads tc.network first; a wrapped curl
+        # must not slip past it
+        self.assertEqual(self._net("timeout 5m curl -sL https://x.com/pull/1.diff"),
+                         [("http", "x.com/pull/1.diff")])
+
+    def test_sudo_flags_skipped(self):
+        self.assertEqual(self._net("sudo -E apt-get install -y jq"),
+                         [("package", "apt-get install jq")])
+
+    def test_python_running_a_script_is_not_a_module(self):
+        self.assertEqual(self._net("python setup.py build"), [])
 
     def test_segments_split_on_pipes_and_ands(self):
         ops = self._net("curl https://a.com/1 && curl https://b.com/2")

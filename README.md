@@ -96,6 +96,23 @@ python3 -m cc_trace flame reports/*.jsonl --view calls -o reports/flame.html
 `tokens` (output tokens), `files`, or `net`. Sample:
 [`examples/example-flame.html`](examples/example-flame.html).
 
+Bash leaves are **normalised**, not raw commands: arguments collapse to
+placeholders while the part that says *what ran* survives, so repeated work
+stacks into one frame instead of fanning out into near-identical slivers.
+
+| raw command | flame leaf |
+| --- | --- |
+| `/tmp/venv/bin/python script.py > out.log` | `python PATH > PATH` |
+| `timeout 300 /tmp/venv/bin/python -m pytest tests/a.py` | `timeout N python -m pytest PATH` |
+| `pytest tests/b.py -k 'bar' --maxfail 5` | `pytest PATH -k STR --maxfail N` |
+| `grep -n 'is_finite' core/assumptions.py 2>/dev/null` | `grep -n STR PATH 2>/dev/null` |
+
+Paths and globs become `PATH`, numbers `N`, quoted strings `STR`; a command keeps
+its basename in command position (so `/usr/bin/grep` and `grep` cluster), and
+redirections stay readable (`2>&1`, not `N>&N`). The same signature drives the
+repeated-work detector, and it is computed from the **full** command at parse
+time — the 80-char display label is only a fallback.
+
 ### Watch a run live (in-flight)
 
 Profile a run *as it happens* instead of after the fact:
@@ -150,6 +167,35 @@ Requires Docker and a Claude Code OAuth token — no `ANTHROPIC_API_KEY`; on
 macOS the token is read from the Keychain automatically. Note the agent sees an
 HTTP 403 rather than a black hole, so this measures *retrieval denied*, not
 *retrieval absent*.
+
+Read the log back with:
+
+```bash
+python3 scripts/egress_audit.py reports/<run>/egress.jsonl \
+    --transcript reports/<run>/transcript.jsonl
+```
+
+which splits connections into **model** / **vendor** / **agent** classes, lists
+the agent-initiated denials, and scores `cc_trace`'s command-string network
+parsing against what the proxy actually saw.
+
+**Docker isn't the only way to enforce this.** The proxy is plain stdlib and
+doesn't care what confines the agent; Docker only supplies the *enforcement*
+(an `--internal` network leaves no route to bypass the proxy with). Two
+alternatives, neither adopted here:
+
+* `HTTPS_PROXY`/`HTTP_PROXY` alone, no container — trivial to set up, but it is
+  a *convention*, not a boundary: anything opening a socket directly ignores it,
+  so a null result would prove nothing.
+* macOS `pf` with a `user` rule (`pfctl` supports per-uid filtering): run the
+  agent as a dedicated uid, block its outbound traffic except to the proxy port.
+  Real enforcement without Docker, at the cost of `sudo` and editing the host's
+  live firewall — a mistake takes the whole machine's networking with it,
+  whereas a container confines the blast radius. On Linux the equivalent
+  (`unshare -n` plus a veth pair) is cheaper and worth preferring.
+
+Docker also gives the fixture image a byte-identical rebuild, which removes a
+confound when comparing runs — the reason it stayed.
 
 ---
 
@@ -228,6 +274,7 @@ scripts/profile_task.sh   # run a task headless, then profile it
 scripts/egress_proxy.py   # stdlib allowlist proxy — logs what an agent tries to fetch
 scripts/isolated_setup.sh # build a red, de-identified SWE-bench fixture image
 scripts/isolated_run.sh   # graded run with no egress but the model API
+scripts/egress_audit.py   # egress log → model/vendor/agent split + parser check
 tasks/                    # fixed benchmark prompts
 examples/                 # a committed example report + json
 tests/                    # unittest suite (stdlib only) — see below

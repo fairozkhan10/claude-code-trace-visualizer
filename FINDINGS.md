@@ -559,6 +559,23 @@ stranding).
   queue/permission waits; costs are list-price estimates from `cc_trace/cost.py`.
   Finding 5 spot-checks this against eBPF ground truth — exact on writes, but only
   n=1, and token/cost figures are still the transcript's self-report.
+- **Finding 6's redundancy magnitudes predate a signature fix — treat them as
+  directional only.** Repeated work is clustered by a normalised command
+  signature. Until 2026-07-27 that signature was derived from the 80-char display
+  label, and **74% of Bash calls across the runs in this document are longer than
+  80 characters** — so commands were being compared by their shared prefix.
+  Re-clustering the sessions still on disk moves `redundant_frac` in both
+  directions and by a lot (one 92-call session fell 0.489 → 0.174 as commands
+  that merely shared a prefix stopped being counted as repeats; a SWE-bench run
+  rose 0.045 → 0.136 as two genuinely identical pytest sweeps, previously split
+  apart, merged). The source transcripts for runs 01–09 have since been rotated
+  out of `~/.claude/projects`, so those rows **cannot** be regenerated. The
+  qualitative claim (repeated work is near-ubiquitous, and debugging repeats more
+  than refactoring) rests on presence and rank rather than magnitude and is
+  unaffected; the absolute percentages should not be cited. The same fix closed a
+  bypass in the finding-11 retrieval detector, where a wrapped command
+  (`timeout 300 pip install …`, `python -m pip …`) parsed as zero network
+  activity.
 
 ## Reproduce
 

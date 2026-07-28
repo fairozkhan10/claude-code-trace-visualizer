@@ -316,7 +316,8 @@
       "turn": 0,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": "Bash:ls -R src tests"
     },
     {
       "index": 1,
@@ -339,7 +340,8 @@
         }
       ],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": "Bash:git fetch origin && git log --oneline -N"
     },
     {
       "index": 2,
@@ -361,7 +363,8 @@
       "turn": 2,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": ""
     },
     {
       "index": 3,
@@ -383,7 +386,8 @@
       "turn": 3,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": ""
     },
     {
       "index": 4,
@@ -405,7 +409,8 @@
       "turn": 4,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": ""
     },
     {
       "index": 5,
@@ -423,7 +428,8 @@
       "turn": 5,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": "Bash:python -m pytest -q"
     },
     {
       "index": 6,
@@ -446,7 +452,8 @@
         }
       ],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": "Bash:pip install pytest-mock"
     },
     {
       "index": 7,
@@ -469,7 +476,8 @@
         }
       ],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": ""
     },
     {
       "index": 8,
@@ -491,7 +499,8 @@
       "turn": 8,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": ""
     },
     {
       "index": 9,
@@ -513,7 +522,8 @@
       "turn": 9,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": ""
     },
     {
       "index": 10,
@@ -531,7 +541,8 @@
       "turn": 10,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": "Bash:python -m pytest -q"
     },
     {
       "index": 11,
@@ -553,7 +564,8 @@
       "turn": 11,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": ""
     },
     {
       "index": 12,
@@ -571,7 +583,8 @@
       "turn": 12,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": "Bash:python -m pytest -q"
     },
     {
       "index": 13,
@@ -595,7 +608,8 @@
       "turn": 13,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": "Bash:python PATH > PATH"
     },
     {
       "index": 14,
@@ -617,7 +631,8 @@
       "turn": 14,
       "network": [],
       "stash_push": 0,
-      "stash_pop": 0
+      "stash_pop": 0,
+      "signature": "Bash:cat > PATH << STR - fix normalize() EOF"
     }
   ],
   "turns": [

@@ -42,9 +42,16 @@ _PHASE_COLOR = {"explore": "#3987e5", "execute": "#d95926", "other": "#6c6d75"}
 
 
 def _target(tc) -> str:
-    """A compact, clustering-friendly leaf label for one tool call."""
+    """A compact, clustering-friendly leaf label for one tool call.
+
+    Bash leaves are the *normalised* command shape (`python -m pytest PATH`), so
+    the same command against different files/flags lands on one frame instead of
+    fanning out. The signature is computed at build time from the full command;
+    `tc.label` is a truncated fallback for traces parsed before that existed.
+    """
     if tc.name == "Bash":
-        sig = _bash_signature(tc.label)[len("Bash:"):].strip()
+        sig = (getattr(tc, "signature", "") or _bash_signature(tc.label))
+        sig = sig[len("Bash:"):].strip() if sig.startswith("Bash:") else sig
         return (sig[:48] + "…") if len(sig) > 49 else (sig or "bash")
     if tc.files:
         return tc.files[0]

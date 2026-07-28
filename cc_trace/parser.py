@@ -128,6 +128,58 @@ def _bash_files(command: str) -> list[tuple[str, str]]:
     return list(ops.items())
 
 
+# --- Lead-command resolution --------------------------------------------------
+# Every bash heuristic below asks the same question first: *which command is this
+# segment actually running?* Answering it with `words[0]` is wrong twice over —
+# the real command is often behind a wrapper (`timeout 300 pip install mpmath`,
+# `sudo make`) or behind an interpreter (`python -m pip install mpmath`), and it
+# is often path-qualified (`/tmp/venv/bin/python`). Both blind spots were real:
+# the network-isolation run's `timeout 300 pip install mpmath` reached pypi.org
+# eight times (the egress proxy logged it) while the parser reported zero network
+# activity. Resolving the lead once, here, fixes classification, network
+# extraction and flame-graph labelling together.
+_CMD_WRAPPERS = {"sudo", "env", "time", "nohup", "timeout", "stdbuf", "nice",
+                 "ionice", "command", "exec"}
+_INTERPRETERS = {"python", "python2", "python3", "py", "node", "ruby", "perl"}
+# a bare duration argument belongs to the wrapper (`timeout 300 …`, `timeout 5m …`)
+_DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
+
+
+def _lead_cmd(words: list[str]) -> tuple[int, str]:
+    """``(index, basename)`` of the command a segment really runs.
+
+    Skips ``VAR=val`` assignments and wrapper commands together with their own
+    flags/duration, then unwraps ``python -m <module>``. Returns ``(len(words),
+    "")`` when the segment runs nothing. Deliberately not a shell parser: a
+    wrapper flag that takes a *separate* value (``xargs -a list.txt cmd``) still
+    confuses it, which costs a missed detection, never a wrong one.
+    """
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if "=" in w and "/" not in w and not w.startswith("-"):
+            i += 1                                  # VAR=val prefix
+            continue
+        if w.split("/")[-1] in _CMD_WRAPPERS:
+            i += 1
+            while i < len(words) and (words[i].startswith("-")
+                                      or _DURATION_RE.match(words[i])):
+                i += 1
+            continue
+        break
+    if i >= len(words):
+        return len(words), ""
+    lead = words[i].split("/")[-1]
+    # `python -m pip install x` runs pip; `python script.py` runs python
+    if lead in _INTERPRETERS:
+        for j in range(i + 1, len(words)):
+            if words[j] == "-m" and j + 1 < len(words):
+                return j + 1, words[j + 1].split("/")[-1]
+            if not words[j].startswith("-"):
+                break
+    return i, lead
+
+
 # --- Network-activity extraction ---------------------------------------------
 # The agent reaches the network mostly through the shell (curl/wget, git remote
 # ops, package installs, ssh/scp) plus the WebFetch/WebSearch/MCP tools. None of
@@ -182,15 +234,9 @@ def _bash_network(command: str) -> list[tuple[str, str]]:
 
     for seg in re.split(r"[;|&\n]+", command):
         words = seg.split()
-        i = 0
-        while i < len(words) and (
-            words[i] in ("sudo", "time", "env", "nohup", "xargs")
-            or ("=" in words[i] and "/" not in words[i])
-        ):
-            i += 1
-        if i >= len(words):
+        i, lead = _lead_cmd(words)
+        if not lead:
             continue
-        lead = words[i].split("/")[-1]
         rest = words[i + 1:]
         urls = _URL_RE.findall(seg)
         scps = _SCP_RE.findall(seg)
@@ -251,11 +297,12 @@ def _classify_bash(command: str) -> str:
     # look at the first "real" token of the first segment
     seg = command.strip().split("&&")[0].split("|")[0].strip()
     parts = seg.split()
-    if not parts:
+    i, lead = _lead_cmd(parts)
+    if not lead:
         return "execute"
-    lead = parts[0]
-    if lead == "git" and len(parts) > 1:
-        return "explore" if parts[1] in READONLY_GIT else "execute"
+    if lead == "git":
+        sub = next((w for w in parts[i + 1:] if not w.startswith("-")), "")
+        return "explore" if sub in READONLY_GIT else "execute"
     return "explore" if lead in READONLY_SHELL else "execute"
 
 
@@ -319,20 +366,62 @@ _STASH_POP_RE = re.compile(r"\bgit stash\s+(?:pop|apply)\b")
 # keep their structured target (re-reading the *same* file is the repeat).
 _NUM_RE = re.compile(r"\b\d[\w.]*\b")
 _STR_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
+# `2>&1`, `>>`, `1>` — shell structure, not a number to collapse
+_REDIR_TOK_RE = re.compile(r"^\d*>{1,2}&?\d*$")
+# an attached redirect prefix: `>out.log`, `2>/dev/null`
+_REDIR_PRE_RE = re.compile(r"^(\d*>{1,2})(.*)$")
+# a path *glob* (`sympy/*/tests/test_*.py`). Only the signature treats these as
+# paths — `_is_pathish` must keep rejecting them, since `_bash_files` records
+# concrete files and a glob names none.
+_GLOB_RE = re.compile(r"^[\w./*?@+-]*[*?][\w./*?@+-]*$")
 
 
 def _bash_signature(label: str) -> str:
-    """Normalised signature of a Bash command for near-duplicate grouping."""
+    """Normalised signature of a Bash command for near-duplicate grouping.
+
+    Arguments collapse to placeholders (``PATH``/``N``/``STR``) while the parts
+    that say *what ran* survive: a command in command position keeps its
+    basename (``/tmp/venv/bin/python -m pytest x.py`` → ``python -m pytest
+    PATH``, not ``PATH -m pytest PATH``), and redirections stay readable
+    (``2>&1`` rather than ``N>&N``).
+    """
     s = _STR_RE.sub("STR", (label or "").replace("\n", " ").strip())
-    s = _NUM_RE.sub("N", s)
-    toks = ["PATH" if _is_pathish(t) else t for t in s.split()]
+    words = s.split()
+    lead_i, lead = _lead_cmd(words)
+
+    def norm(tok: str) -> str:
+        if _REDIR_TOK_RE.match(tok):
+            return tok
+        m = _REDIR_PRE_RE.match(tok)
+        pre, rest = (m.group(1), m.group(2)) if m else ("", tok)
+        if not rest:
+            return pre
+        if _GLOB_RE.match(rest) and ("/" in rest or "." in rest[1:]):
+            return pre + "PATH"
+        rest = _NUM_RE.sub("N", rest)
+        return pre + ("PATH" if _is_pathish(rest) else rest)
+
+    toks = []
+    for i, w in enumerate(words):
+        if i == lead_i and lead:
+            toks.append(lead)               # the command itself, unqualified
+        elif (i < lead_i and _is_pathish(w)
+              and not w.startswith("-") and "=" not in w):
+            toks.append(w.split("/")[-1])   # wrapper/interpreter in command position
+        else:
+            toks.append(norm(w))
     return "Bash:" + " ".join(toks)
 
 
-def _call_signature(name: str, label: str, files: list[str]) -> Optional[str]:
-    """Grouping key for repeated-work detection; ``None`` to ignore the call."""
+def _call_signature(name: str, label: str, files: list[str],
+                    signature: str = "") -> Optional[str]:
+    """Grouping key for repeated-work detection; ``None`` to ignore the call.
+
+    ``signature`` is the build-time normalisation of the full Bash command; it
+    is preferred over re-deriving one from the truncated ``label``.
+    """
     if name == "Bash":
-        return _bash_signature(label)
+        return signature or _bash_signature(label)
     target = files[0] if files else (label or "")
     return f"{name}:{target}" if target else None
 
@@ -367,6 +456,10 @@ class ToolCall:
     # baseline check, which would false-positive the stranded-work detector)
     stash_push: int = 0
     stash_pop: int = 0
+    # normalised Bash command shape (`python -m pytest PATH`), also from the FULL
+    # command: clustering off the truncated label splits one recurring command
+    # into several leaves whenever its distinguishing tail sits past 80 chars
+    signature: str = ""
 
 
 @dataclass
@@ -626,7 +719,7 @@ class Trace:
         """
         members: dict[str, list[ToolCall]] = {}
         for tc in self.tool_calls:
-            sig = _call_signature(tc.name, tc.label, tc.files)
+            sig = _call_signature(tc.name, tc.label, tc.files, tc.signature)
             if sig is not None:
                 members.setdefault(sig, []).append(tc)
 
@@ -842,6 +935,7 @@ class _Builder:
                     network=[{"kind": k, "target": t} for k, t in net],
                     stash_push=len(_STASH_PUSH_RE.findall(cmd)),
                     stash_pop=len(_STASH_POP_RE.findall(cmd)),
+                    signature=_bash_signature(cmd) if name == "Bash" else "",
                 )
                 self.pending[tc.id] = tc
                 self.tool_calls.append(tc)

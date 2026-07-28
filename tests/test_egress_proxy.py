@@ -87,3 +87,29 @@ class TestSummarize(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEgressAudit(unittest.TestCase):
+    """The signal/noise split that answers 'is non-model tracing too noisy?'."""
+
+    def test_classes_separate_model_vendor_and_agent(self):
+        from egress_audit import classify
+        self.assertEqual(classify("api.anthropic.com"), "model")
+        self.assertEqual(classify("http-intake.logs.us5.datadoghq.com"), "vendor")
+        self.assertEqual(classify("pypi.org"), "agent")
+        self.assertEqual(classify("patch-diff.githubusercontent.com"), "agent")
+
+    def test_package_descriptor_resolves_to_its_index_host(self):
+        # the parser records `pip install mpmath` — no hostname in the command —
+        # so scoring it against the proxy needs the index each tool reaches
+        from egress_audit import PKG_INDEX
+        self.assertEqual(PKG_INDEX["pip"], "pypi.org")
+        self.assertEqual(PKG_INDEX["cargo"], "crates.io")
+
+    def test_load_skips_malformed_lines(self):
+        from egress_audit import load
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "e.jsonl"
+            p.write_text('{"host":"pypi.org","decision":"deny","t":1}\n'
+                         'not json\n\n', encoding="utf-8")
+            self.assertEqual(len(load(p)), 1)

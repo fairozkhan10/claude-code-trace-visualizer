@@ -107,3 +107,28 @@ class TestCompare(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCompareLabels(unittest.TestCase):
+    """Row labels have to distinguish runs, or a cross-model table is unreadable."""
+
+    def test_generic_fixture_dir_walks_up(self):
+        # SWE-bench fixtures all check out into `<task>/repo`, so the basename
+        # alone labelled every row "repo"
+        from cc_trace.compare import _label
+        self.assertEqual(_label({"cwd": "/x/swebench/task-a/repo"}), "task-a")
+        self.assertEqual(_label({"cwd": "/x/swebench/task-b/src"}), "task-b")
+
+    def test_informative_basename_is_kept(self):
+        from cc_trace.compare import _label
+        self.assertEqual(_label({"cwd": "/home/me/tinycss2"}), "tinycss2")
+
+    def test_task_tag_still_wins(self):
+        from cc_trace.compare import _label
+        self.assertEqual(
+            _label({"cwd": "/x/repo", "user_prompts": ["Task category: refactor"]}),
+            "refactor")
+
+    def test_session_id_is_the_last_resort(self):
+        from cc_trace.compare import _label
+        self.assertEqual(_label({"cwd": "", "session_id": "abcd1234-x"}), "abcd1234")

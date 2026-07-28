@@ -41,14 +41,24 @@ def _compare_main(argv: list[str]) -> int:
                     help="write an HTML rollup to this path (in addition to the table)")
     ap.add_argument("--open", action="store_true",
                     help="open the HTML rollup in a browser when done")
+    ap.add_argument("--label", action="append", default=None, metavar="NAME",
+                    help="row label, repeatable, applied to targets in order "
+                         "(benchmark fixtures often share a cwd basename like "
+                         "'repo', which makes the auto-labels indistinguishable)")
     args = ap.parse_args(argv)
 
     rows = []
-    for tgt in args.targets:
+    for i, tgt in enumerate(args.targets):
         try:
-            rows.append(cmp.summarize(cmp.load_trace_dict(tgt, _resolve)))
+            row = cmp.summarize(cmp.load_trace_dict(tgt, _resolve))
+            if args.label and i < len(args.label):
+                row["label"] = args.label[i][:24]
+            rows.append(row)
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
             print(f"skipping {tgt}: {e}", file=sys.stderr)
+    if args.label and len(args.label) > len(args.targets):
+        print(f"warning: {len(args.label)} labels for {len(args.targets)} targets",
+              file=sys.stderr)
     if not rows:
         print("no usable runs to compare", file=sys.stderr)
         return 1

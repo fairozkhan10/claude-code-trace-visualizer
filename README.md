@@ -59,6 +59,10 @@ Profiled a few tasks? Roll them into one cross-run table:
 
 ```bash
 python3 -m cc_trace compare reports/*.json -o reports/compare.html
+
+# name the rows yourself — SWE-bench fixtures all live in `<task>/repo`, so the
+# auto-labels collapse to "repo" and a cross-model table becomes unreadable
+python3 -m cc_trace compare a.json b.json --label opus --label fable -o out.html
 ```
 
 You get one row per run with its phase mix, the **explore→execute separation**

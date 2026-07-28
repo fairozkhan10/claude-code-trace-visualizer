@@ -25,6 +25,8 @@ from .parser import parse_transcript
 
 # How "Task category: **<x>**" is written in the benchmark prompts under tasks/.
 _TASK_TAG = "Task category:"
+# directory names that identify nothing on their own
+_GENERIC_DIRS = {"repo", "src", "code", "work", "workspace", "project", "tmp"}
 
 
 def load_trace_dict(target: str, resolve) -> dict[str, Any]:
@@ -51,7 +53,13 @@ def _label(d: dict) -> str:
             cat = after.splitlines()[0].strip().strip("*").strip()
             if cat:
                 return cat[:24]
+    # SWE-bench fixtures all check out into `<task>/repo`, so the basename alone
+    # labels every row identically — walk up until the name carries information
     cwd = d.get("cwd") or ""
+    parts = [p for p in Path(cwd).parts if p not in ("/", "")]
+    for name in reversed(parts[-2:] or []):
+        if name not in _GENERIC_DIRS:
+            return name[:24]
     return Path(cwd).name[:24] or (d.get("session_id") or "?")[:8]
 
 

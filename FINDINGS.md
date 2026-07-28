@@ -576,6 +576,12 @@ stranding).
   bypass in the finding-11 retrieval detector, where a wrapped command
   (`timeout 300 pip install …`, `python -m pip …`) parsed as zero network
   activity.
+  **Findings 7, 10 and 11 are not affected.** Every run of theirs whose transcript
+  survives was re-profiled with the fixed parser and every published figure
+  reproduced exactly — sympy-16597/Opus (18 calls, purity 0.89, redundancy 44%),
+  pytest-10356/Opus (10 calls, purity 0.80, 30%), and the 13%-vs-44% contrast that
+  carries finding 11's "nothing was diagnosed" argument. Phase metrics are
+  untouched everywhere: no call changes phase in any surviving transcript.
 
 ## Reproduce
 

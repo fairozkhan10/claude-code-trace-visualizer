@@ -75,6 +75,66 @@ def _compare_main(argv: list[str]) -> int:
     return 0
 
 
+def _stats_main(argv: list[str]) -> int:
+    """`cc-trace stats A.json B.json … --group opus --group fable` — is the
+    difference between two groups of runs real, or is n just too small?"""
+    from . import compare as cmp
+    from . import stats as st
+
+    ap = argparse.ArgumentParser(
+        prog="cc-trace stats",
+        description="Test whether cross-run differences survive the small "
+                    "sample sizes these benchmarks can afford.")
+    ap.add_argument("targets", nargs="+",
+                    help="parsed .json reports, .jsonl transcripts, or session ids")
+    ap.add_argument("--group", action="append", default=None, metavar="NAME",
+                    help="group name, repeatable, applied to targets in order "
+                         "(default: the run's auto-label)")
+    ap.add_argument("--metric", action="append", default=None, metavar="KEY",
+                    help=f"metric to test, repeatable (default: "
+                         f"{', '.join(st.DEFAULT_METRICS)})")
+    ap.add_argument("--seed", type=int, default=st.DEFAULT_SEED,
+                    help="bootstrap/permutation seed (default: %(default)s)")
+    ap.add_argument("--resamples", type=int, default=10_000,
+                    help="bootstrap resamples (default: %(default)s)")
+    ap.add_argument("--json", metavar="PATH", default=None,
+                    help="also write the full result as JSON")
+    args = ap.parse_args(argv)
+
+    rows = []
+    for i, tgt in enumerate(args.targets):
+        try:
+            row = cmp.summarize(cmp.load_trace_dict(tgt, _resolve))
+            if args.group and i < len(args.group):
+                row["group"] = args.group[i]
+            rows.append(row)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+            print(f"skipping {tgt}: {e}", file=sys.stderr)
+    if args.group and len(args.group) > len(args.targets):
+        print(f"warning: {len(args.group)} groups for {len(args.targets)} targets",
+              file=sys.stderr)
+    if len(rows) < 2:
+        print("need at least 2 usable runs to compare groups", file=sys.stderr)
+        return 1
+
+    metrics = tuple(args.metric) if args.metric else st.DEFAULT_METRICS
+    unknown = [m for m in metrics if m not in rows[0]]
+    if unknown:
+        print(f"unknown metric(s): {', '.join(unknown)}", file=sys.stderr)
+        return 1
+
+    res = st.compare_groups(rows, metrics=metrics, seed=args.seed,
+                            n_resamples=args.resamples)
+    print(st.render_text(res))
+    if args.json:
+        out = Path(args.json)
+        if out.parent != Path(""):
+            out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(res, indent=2), encoding="utf-8")
+        print(f"\nwrote {out}", file=sys.stderr)
+    return 0
+
+
 def _flame_main(argv: list[str]) -> int:
     """`cc-trace flame A.jsonl B.jsonl … --view tokens -o flame.html` —
     a phase-coloured flame graph (HTML) or folded stacks (.folded)."""
@@ -199,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
         return _live_main(argv[1:])
     if argv and argv[0] == "flame":
         return _flame_main(argv[1:])
+    if argv and argv[0] == "stats":
+        return _stats_main(argv[1:])
 
     ap = argparse.ArgumentParser(
         prog="cc-trace",
@@ -219,6 +281,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo", default=None, metavar="ORG/NAME",
                     help="repo under test, to scope the benchmark-validity "
                          "audit (default: inferred from cwd / git remotes)")
+    ap.add_argument("--graded-test", action="append", default=None,
+                    metavar="SELECTOR",
+                    help="test the run is graded on, e.g. "
+                         "'tests/test_x.py::test_y'; repeatable, and accepts a "
+                         "whitespace-separated list (paste a SWE-bench f2p.txt). "
+                         "Writes to these files are flagged 'high' by the audit")
     args = ap.parse_args(argv)
 
     if args.list:
@@ -240,6 +308,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"parsing {path}", file=sys.stderr)
     trace = parse_transcript(str(path))
     trace.repo_hint = args.repo
+    if args.graded_test:
+        trace.graded_tests = args.graded_test
 
     out = Path(args.out) if args.out else Path(f"{trace.session_id or path.stem}.html")
     if out.parent != Path(""):

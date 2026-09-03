@@ -109,6 +109,92 @@ class TestStrandedWork(unittest.TestCase):
         self.assertTrue(_trace([_bash(0, cmd)]).validity_audit()["clean"])
 
 
+def _edit(i, path, mode="write", name="Edit"):
+    """An Edit/Write call touching one file."""
+    return ToolCall(index=i, id=f"t{i}", name=name, label=path,
+                    phase="execute", start=float(i), end=float(i) + 1,
+                    duration=1.0, is_error=False, files=[path],
+                    file_modes={path: mode}, output_chars=0, turn=0,
+                    network=[])
+
+
+class TestTestEdit(unittest.TestCase):
+    """Detector 4 — the agent writing to the tests it is graded on."""
+
+    F2P = "./sympy/core/tests/test_assumptions.py::test_infinity"
+
+    def test_write_to_graded_test_file_is_high(self):
+        va = _trace([_edit(0, "sympy/core/tests/test_assumptions.py")]) \
+            .validity_audit(graded_tests=[self.F2P])
+        f = va["flags"][0]
+        self.assertEqual((f["kind"], f["severity"]), ("test_edit", "high"))
+        self.assertIn("GRADED", f["detail"])
+        self.assertEqual(f["index"], 0)
+
+    def test_write_to_ungraded_test_file_is_only_warn(self):
+        va = _trace([_edit(0, "sympy/other/tests/test_elsewhere.py")]) \
+            .validity_audit(graded_tests=[self.F2P])
+        self.assertEqual(va["flags"][0]["severity"], "warn")
+
+    def test_reading_a_test_file_is_not_a_flag(self):
+        # agents read tests constantly; only writes change the answer key
+        va = _trace([_edit(0, "sympy/core/tests/test_assumptions.py",
+                           mode="read")]).validity_audit(graded_tests=[self.F2P])
+        self.assertTrue(va["clean"])
+
+    def test_editing_the_source_under_test_is_not_a_flag(self):
+        # the actual fix — exactly what the agent is supposed to do
+        va = _trace([_edit(0, "sympy/core/assumptions.py")]) \
+            .validity_audit(graded_tests=[self.F2P])
+        self.assertTrue(va["clean"])
+
+    def test_f2p_file_contents_can_be_passed_verbatim(self):
+        # SWE-bench f2p.txt is one whitespace-separated line of selectors
+        f2p = ("./sympy/core/tests/test_assumptions.py::test_infinity "
+               "./sympy/core/tests/test_assumptions.py::test_other_symbol")
+        va = _trace([_edit(0, "sympy/core/tests/test_assumptions.py")]) \
+            .validity_audit(graded_tests=f2p)
+        self.assertEqual(va["flags"][0]["severity"], "high")
+
+    def test_matches_absolute_container_paths_against_relative_selectors(self):
+        # production shape: the transcript records absolute in-container paths,
+        # while f2p.txt selectors are repo-relative with a ./ prefix
+        va = _trace([_edit(
+            0, "/home/agent/task/repo/sympy/core/tests/test_assumptions.py")]) \
+            .validity_audit(graded_tests=[self.F2P])
+        self.assertEqual(va["flags"][0]["severity"], "high")
+
+    def test_graded_tests_may_come_from_the_trace_field(self):
+        t = _trace([_edit(0, "sympy/core/tests/test_assumptions.py")])
+        t.graded_tests = [self.F2P]
+        self.assertEqual(t.validity_audit()["flags"][0]["severity"], "high")
+
+    def test_test_edit_without_graded_list_still_warns(self):
+        va = _trace([_edit(0, "tests/test_thing.py")]).validity_audit()
+        self.assertEqual((va["flags"][0]["kind"], va["flags"][0]["severity"]),
+                         ("test_edit", "warn"))
+
+    def test_conftest_and_js_and_go_shapes_are_recognised(self):
+        for path in ("conftest.py", "src/foo.spec.ts", "pkg/thing_test.go",
+                     "src/Widget.test.jsx", "a/tests/helper.py"):
+            va = _trace([_edit(0, path)]).validity_audit()
+            self.assertEqual(va["n_flags"], 1, f"missed {path}")
+
+    def test_ordinary_source_paths_do_not_match(self):
+        for path in ("src/latest.py", "contest.py", "testing_utils.py",
+                     "app/protest/views.py"):
+            va = _trace([_edit(0, path)]).validity_audit()
+            self.assertTrue(va["clean"], f"false positive on {path}")
+
+    def test_the_real_fable_run_shape_is_clean(self):
+        # the 2026-09-03 isolated run: only the source file was written, and
+        # the dirty test files came from the fixture's pre-applied test patch
+        va = _trace([_edit(0, "sympy/core/assumptions.py"),
+                     _edit(1, "sympy/core/tests/test_assumptions.py",
+                           mode="read")]).validity_audit(graded_tests=self.F2P)
+        self.assertTrue(va["clean"])
+
+
 class TestRepoInference(unittest.TestCase):
     def test_explicit_repo_beats_inference(self):
         va = _trace([], cwd="/x/sympy__sympy-1", repo_hint="a/b").validity_audit()

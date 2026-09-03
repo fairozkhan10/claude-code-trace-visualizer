@@ -352,6 +352,38 @@ _SOLUTION_URL_RE = re.compile(
     r"|api\.github\.com/search|patch-diff\.githubusercontent\.com")
 _STASH_PUSH_RE = re.compile(r"\bgit stash\b(?!\s+(?:pop|apply|list|show|drop|clear))")
 _STASH_POP_RE = re.compile(r"\bgit stash\s+(?:pop|apply)\b")
+# Paths that hold tests. A benchmark grades the agent by running these, so an
+# agent *writing* one is editing its own answer key — the grade stops measuring
+# the fix and starts measuring the edit. Deliberately broad across ecosystems:
+# a false "warn" costs a human glance, a miss costs a bad number in a paper.
+def _graded_test_files(selectors) -> set:
+    """Normalise pytest-style selectors to plain file paths.
+
+    ``./sympy/core/tests/test_assumptions.py::test_infinity`` →
+    ``sympy/core/tests/test_assumptions.py``. Accepts a whitespace-separated
+    string (the shape of SWE-bench ``f2p.txt``) or an iterable.
+    """
+    if not selectors:
+        return set()
+    if isinstance(selectors, str):
+        selectors = selectors.split()
+    out = set()
+    for s in selectors:
+        p = str(s).split("::", 1)[0].strip()
+        while p.startswith("./"):
+            p = p[2:]
+        if p:
+            out.add(p)
+    return out
+
+
+_TEST_FILE_RE = re.compile(
+    r"(^|/)tests?/"                       # a tests/ or test/ directory
+    r"|(^|/)test_[^/]*\.py$|_test\.py$"   # python: test_x.py / x_test.py
+    r"|(^|/)conftest\.py$"                # python: fixtures that steer tests
+    r"|\.(?:spec|test)\.[jt]sx?$"         # js/ts: x.spec.ts / x.test.tsx
+    r"|_test\.go$|(^|/)\w+Test\.java$",   # go / java
+    re.IGNORECASE)
 
 
 # --- Repeated-work / near-duplicate detection --------------------------------
@@ -487,6 +519,9 @@ class Trace:
     turns: list[Turn] = field(default_factory=list)
     user_prompts: list[str] = field(default_factory=list)
     repo_hint: Optional[str] = None      # "org/repo" under test (--repo flag)
+    # graded test selectors, e.g. "sympy/core/tests/test_assumptions.py::test_x"
+    # (--graded-test flag; the harness reads them straight out of f2p.txt)
+    graded_tests: list[str] = field(default_factory=list)
 
     # ---- derived summaries -------------------------------------------------
     @property
@@ -553,10 +588,11 @@ class Trace:
             "requests": reqs,
         }
 
-    def validity_audit(self, repo: Optional[str] = None) -> dict:
+    def validity_audit(self, repo: Optional[str] = None,
+                       graded_tests=None) -> dict:
         """Benchmark-validity flags: the finding-11 failure modes, mechanised.
 
-        Three detectors, each a *flag for human review* (not a verdict):
+        Four detectors, each a *flag for human review* (not a verdict):
 
         * **solution_channel** — a network request whose target is shaped like a
           fix's provenance (a ``/pull/<n>`` or ``/commit/<sha>`` URL, a ``.diff``/
@@ -568,10 +604,22 @@ class Trace:
         * **stranded_work** — more ``git stash`` pushes than ``pop``/``apply``
           restores: work may have ended the run parked outside the tree, which a
           one-shot harness grades as a failure.
+        * **test_edit** — the agent *wrote* to a test file. Severity ``high``
+          when that file is one the run is graded on (``graded_tests``, e.g. the
+          contents of a SWE-bench ``f2p.txt``), because the grade then reflects
+          the agent's edit rather than its fix; ``warn`` for any other test file,
+          which is often legitimate (TDD) but worth a human glance.
 
         The repo under test is taken from ``repo`` (or the ``--repo`` CLI flag),
         else inferred from an instance id in ``cwd``, else from the run's own
         ``git``-kind network operations (clone/push URLs).
+
+        NOTE the blind spot this cannot see: a fixture that ships a *pre-applied*
+        test patch leaves those files dirty before the agent starts, so
+        ``git status`` alone cannot separate the harness's edits from the
+        agent's. This detector reads the transcript instead — it flags only
+        writes the agent actually made — which is why it stays correct on such
+        fixtures.
         """
         repo = repo or self.repo_hint
         repo_source = "flag" if repo else None
@@ -629,6 +677,26 @@ class Trace:
                           "index": None,
                           "detail": f"{pushes} git stash push(es) vs {pops} "
                                     f"pop/apply — work may end the run stashed"})
+
+        # 4. the agent writing to test files — it may be editing the answer key
+        graded = _graded_test_files(graded_tests or self.graded_tests)
+        for tc in self.tool_calls:
+            for path, mode in (tc.file_modes or {}).items():
+                if mode != "write" or not _TEST_FILE_RE.search(path):
+                    continue
+                # a write to a *graded* file is the severe case: that file
+                # decides the grade, so the run can no longer be scored
+                base = path.rsplit("/", 1)[-1]
+                is_graded = any(path == g or path.endswith("/" + g)
+                                or g.endswith("/" + path)
+                                or base == g.rsplit("/", 1)[-1]
+                                for g in graded)
+                flags.append({
+                    "kind": "test_edit",
+                    "severity": "high" if is_graded else "warn",
+                    "index": tc.index,
+                    "detail": ("wrote GRADED test file " if is_graded
+                               else "wrote test file ") + path[:100]})
 
         flags.sort(key=lambda f: (f["severity"] != "high", f["kind"]))
         return {"repo_under_test": repo, "repo_source": repo_source,

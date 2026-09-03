@@ -74,6 +74,19 @@ for t in $F2P_NAMES; do
 done
 echo "$SEL" > "$TASK/f2p.txt"
 
+# Snapshot the graded test files exactly as the fixture ships them.
+# The test patch above is applied to the WORKING TREE and never committed, so
+# HEAD holds the *pre-patch* tests: `git checkout` would restore the wrong ones,
+# and `git status` cannot tell this harness edit apart from an agent edit. This
+# copy is the only trustworthy baseline for "were the graded tests changed?".
+mkdir -p "$TASK/test_baseline"
+for s in $SEL; do
+  f="${s%%::*}"; f="${f#./}"
+  mkdir -p "$TASK/test_baseline/$(dirname "$f")"
+  cp "$f" "$TASK/test_baseline/$f"
+done
+echo "  baselined $(echo "$SEL" | wc -w) graded test selector(s)"
+
 echo "=== RED CHECK (must FAIL — a green fixture means the patch or env is wrong) ==="
 set +e
 "$TASK/.venv/bin/python" -m pytest -q $SEL 2>&1 | tail -6

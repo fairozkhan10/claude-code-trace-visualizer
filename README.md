@@ -7,8 +7,9 @@ Point it at a session and it renders one **self-contained, offline HTML
 dashboard**: a timeline of tool calls, a read/explore → execute/write phase view,
 per-turn token & context growth, a tool-call breakdown, a file-access table, a
 **network-activity** panel, a **benchmark-validity audit** (flags an agent
-fetching a fix's provenance, instance-id leaks, and work stranded in `git stash`
-— see FINDINGS finding 11), a file co-access graph, detected retry loops, a
+fetching a fix's provenance, instance-id leaks, work stranded in `git stash`, and
+writes to the graded tests — see FINDINGS finding 11), a file co-access graph,
+detected retry loops, a
 **repeated-work** panel (identical or near-identical calls the agent re-issues — a
 caching/optimization signal), and an
 errors list. No instrumentation, no services, no dependencies — it just reads the
@@ -78,6 +79,36 @@ coding bug fix          34     606     5.05   0.09  0.68  1.00    2    Bash
 "explore first, then execute" shift; near zero = explore and execute interleave**
 in a reproduce→fix→test loop. Which one you see depends on *task type × difficulty*
 — see [`FINDINGS.md`](FINDINGS.md).
+
+### Is a cross-run difference real? (`stats`)
+
+`compare` shows that two groups of runs *differ*. `stats` asks whether the gap
+survives the sample sizes these benchmarks can afford:
+
+```bash
+python3 -m cc_trace stats r1.json r2.json r3.json r4.json r5.json r6.json \
+    --group opus --group opus --group opus \
+    --group fable --group fable --group fable
+```
+
+Exact permutation Mann-Whitney (it enumerates the null rather than assuming
+normality, and handles the ties that phase purity produces), **Cliff's delta**
+for effect size, seeded bootstrap CIs on the difference of medians, and
+Holm adjustment across metrics.
+
+Its most useful output is a warning about your *design*, not your data:
+
+```
+!! UNDERPOWERED BY DESIGN — n=3 vs 3 puts the smallest reachable two-sided p at 0.100.
+   No p here can clear 0.05 no matter how large the effect.
+   n=4 per group is the smallest balanced design that can reach p<0.05.
+```
+
+With three runs per group the permutation null has only `C(6,3)=20` splits, so
+`p ≥ 0.1` **whatever the numbers are** — "not significant" would describe the
+experiment, not the models. At n=1 the tool refuses to report a delta or a CI at
+all, since both are ±1 and degenerate by construction. Bootstrap and Monte-Carlo
+paths are seeded, so a figure in a write-up reproduces exactly.
 
 ### Flame graph (phase → tool → target)
 
@@ -167,6 +198,15 @@ never surface as a tool call. The run also grades `FAIL_TO_PASS`, checks `git
 stash` for finding 11's other failure mode (a correct fix left stranded), and
 profiles the transcript.
 
+**Test integrity.** Before grading, the run verifies the graded test files
+against a baseline copy the fixture image carries, restores any that changed,
+and records the result in `test-integrity.txt` — a grade is only meaningful if
+the tests are the ones the fixture shipped. This can't be done with git: the
+setup script applies the instance's test patch to the *working tree* and never
+commits it, so `HEAD` holds the pre-patch tests and `git status` cannot tell the
+harness's own edits apart from the agent's. (Fixtures built before this check
+report `NO BASELINE` and grade as `UNVERIFIED` rather than pretending.)
+
 Requires Docker and a Claude Code OAuth token — no `ANTHROPIC_API_KEY`; on
 macOS the token is read from the Keychain automatically. Note the agent sees an
 HTTP 403 rather than a black hole, so this measures *retrieval denied*, not
@@ -214,7 +254,7 @@ Everything below is pulled straight from the transcript — nothing is instrumen
 | Success / failure (retry candidates) | `tool_result.is_error` |
 | Files touched (read vs. write) | tool `file_path` **+ shell redirects / here-docs / `tee` / script runs parsed from Bash** |
 | **Network activity** | curl/wget, git remote ops, package installs, ssh/scp, WebFetch/WebSearch/MCP — parsed from commands & tool inputs |
-| **Benchmark-validity flags** | solution-channel network (PR diffs, commit searches against the repo under test), instance-id leaks in path/prompt, work stranded in `git stash` — the finding-11 failure modes, flagged for review |
+| **Benchmark-validity flags** | solution-channel network (PR diffs, commit searches against the repo under test), instance-id leaks in path/prompt, work stranded in `git stash`, and **writes to the tests the run is graded on** (`--graded-test`, e.g. a SWE-bench `f2p.txt`) — the finding-11 failure modes, flagged for review |
 | Tokens (input / output / cache-read / cache-write) | `message.usage` per turn |
 | Context growth | cumulative cache-read + input per turn |
 | Estimated cost (USD) | usage × per-model price table |

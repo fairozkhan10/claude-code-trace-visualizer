@@ -51,6 +51,15 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
   (tested); de-identification does **not** reliably stop retrieval — a follow-up run
   re-found the PR by *searching GitHub with the issue's wording*. The phase framework
   stayed legible through all of it.
+- **Close the network and the score is *still* wrong — now with honest agents.**
+  Four network-isolated runs of the same model on the same bug all pass, with zero
+  retrieval attempts and verified-untouched tests — and produce **four different
+  patches**. One of them also finds the nondeterministic hang the fix itself
+  introduces; the other three ship it. The grade is identical for all four. The
+  same run is 2.7× the cost of the median, so scoring on the grade alone selects
+  against the thorough one. Purity replicates tightly here (sd 0.028) — and lands
+  ~0.25 below the single-run 0.944 quoted above, which is why single-run
+  cross-model claims in this document should be read as unreplicated.
 
 The middle finding is the interesting one, and it took two wrong turns to get
 right (see finding 2). Below is how we got there.
@@ -529,10 +538,24 @@ autonomous-instruction mitigation **n=2** (no stranding either time). The clean
 network here doesn't retire failure mode 1 — retrieval is stochastic (run 3 vs
 run 4 above), so a quiet run is consistent, not exculpatory.
 
+*Amendment 2 — the isolated replication (2026-09-03) revises two claims above.*
+(a) **The 0.944 does not replicate.** Four network-isolated Fable 5 runs on this
+same instance give 0.714 / 0.704 / 0.652 / 0.679 (sd 0.028) — see finding 12.
+Run 3's 0.944 was n=1 and should no longer be read as "the capability
+measurement"; the capability-relative purity gradient asserted here rests on
+single runs per cell and is **unreplicated**. (b) **The retrieval hole is
+closed, and confirmed empty.** Under isolation, across four runs, Fable 5 made
+**zero** attempts on any source-hosting domain — the proxy's deny log is entirely
+vendor telemetry and blocked `pypi` installs. That is a stronger result than run
+3's quiet network (which was consistent-but-not-exculpatory, since retrieval is
+stochastic): here retrieval was *impossible*, and the model solved the bug
+anyway, four times out of four. What isolation then exposed is a third failure
+mode the score cannot see — finding 12.
+
 *Practical notes:* (1) **de-identifying fixture paths is necessary but not
 sufficient** — the instance id is a URL, but the issue text is a search query;
 the only real immunity from runtime provenance retrieval is **network isolation**
-(the Docker harness). (2) One-shot (`-p`) harnesses driving newer agentic models
+(the Docker harness, now built and used in finding 12). (2) One-shot (`-p`) harnesses driving newer agentic models
 should say so in the prompt — the autonomous-instruction mitigation is **tested
 here (n=2)**: it eliminates stranded work without degrading verification. (3)
 Small n per failure mode: existence proofs and a twice-tested fix, not rates. (4) These
@@ -543,8 +566,113 @@ table's verdicts exactly (run 1: high-severity provenance flag on the
 `pull/16597` diff; run 3: stranded-work only; run 4: the retrieval hunt, no
 stranding).
 
+### 12. Four passing runs, four different patches — the grade can't see solution quality
+
+Finding 11 ended on a promise: only **network isolation** gives immunity from
+runtime provenance retrieval. We built that harness (`scripts/isolated_run.sh` —
+task container on an `--internal` Docker network, no DNS, no route, reaching out
+only through a stdlib allowlist proxy) and ran **Fable 5 on `sympy-16597` four
+times**, same de-identified fixture, same autonomous prompt, nothing changed
+between runs but the sampling.
+
+All four **passed**, and all four passed *legitimately*: zero source-hosting
+egress attempts (the proxy logged only model-API traffic, vendor telemetry, and
+blocked `pypi` installs), empty stashes, zero validity-audit flags, and — for the
+three runs post-dating the check — the graded test files verified byte-identical
+to the fixture baseline before `pytest` ran. Failure modes 1 and 2 are closed
+here. **The third one is new.**
+
+| run | calls | dur (s) | cost $ | purity | redun | files changed | grade |
+|---|---:|---:|---:|---:|---:|---|---|
+| r1 | 21 | 851 | 0.47 | 0.714 | 0.190 | `core/assumptions.py` | ✅ 3 passed |
+| r2 | 30 | 873 | 0.76 | 0.704 | 0.233 | `core/assumptions.py` | ✅ 3 passed |
+| r3 | 24 | 830 | 0.58 | 0.652 | 0.208 | `core/assumptions.py` | ✅ 3 passed |
+| r4 | 53 | 2309 | 1.18 | 0.679 | 0.264 | `core/assumptions.py` **+ `core/power.py`** | ✅ 3 passed |
+
+**The four patches are not the same patch.** Every run reached the same insight —
+the assumption engine never connects the rational/algebraic hierarchy to
+`finite`, so `even` fails to imply `finite` — but each wired it in differently:
+
+- **r1** conjoined `& finite` onto three implications (`rational -> real`,
+  `algebraic -> complex`, **`imaginary -> complex`**) plus `irrational`. That
+  third one is a semantic choice the others never make: it declares every
+  imaginary number finite.
+- **r2** took `algebraic`, `transcendental`, `irrational` — and left `imaginary`
+  and `rational` alone.
+- **r3** reached the same place structurally differently, adding a *separate*
+  `'algebraic -> finite'` rule rather than conjoining onto the existing one.
+- **r4** matched r2's three rules, then kept going.
+
+**Only r4 found the bug its own fix introduces.** Making `rational` a
+prerequisite of `finite` lets the engine's randomized deduction order reach
+`Pow._eval_is_rational`, which rebuilds the power *with* evaluation — so
+`Mod(Pow(2, 10000000000, evaluate=False), 3)` tries to materialise a
+10-billion-bit integer and hangs. It is **nondeterministic**: it depends on which
+prerequisite the engine happens to try first. r4 reproduced it, added the early
+exit (the same guard SymPy upstream adopted), then ran the `core` suite three
+times *specifically because the hang is probabilistic*, and swept twelve
+assumption-sensitive modules.
+
+Runs r1–r3 ship a fix that introduces a latent nondeterministic hang into
+`Pow`. **The benchmark scores them identically to r4.** `FAIL_TO_PASS` is three
+assertions about `oo` and `Symbol`; nothing in it can reach a pathological
+exponent, so the grade is blind — not to cheating this time, but to *correctness
+the task never thought to ask about*. Finding 11 showed benchmark validity
+degrading along axes the score can't see; this is the same failure with the
+adversarial reading removed. Every run here is honest. The scoreboard is still
+wrong.
+
+The thoroughness is not free: r4 cost **2.7× the median run** (53 calls vs ~27,
+2309 s vs ~860 s, $1.18 vs $0.67). A harness that rewarded only the score would
+select against it.
+
+**Phase purity replicates tightly, and it is not 0.944.** Across the four runs:
+**0.714 / 0.704 / 0.652 / 0.679** — median 0.692, mean 0.687, **sd 0.028**. The
+metric is stable run-to-run, which is what makes it usable for cross-run
+comparison at all. But finding 11 offered run 3's **0.944** as "the capability
+measurement" for Fable 5 on this instance, and at n=4 that number does not
+reproduce — every isolated run lands ~0.25 below it. Two honest caveats before
+reading this as a refutation: the isolated runs face **blocked `pypi` requests**
+(8–15 denials each) that the un-isolated run never hit, which adds recovery work
+and depresses purity; and the environments differ (container vs host). The
+defensible claim is narrower than "0.944 was wrong": **0.944 was n=1, and no
+replication has come near it.** Cross-model purity claims built on single runs —
+including finding 11's capability gradient — should be treated as unreplicated
+until they are re-run under isolation.
+
+*Scope:* one model, one instance, n=4. The solution-scope result is an
+**existence proof** — four passing runs, four different patches, one materially
+more complete — not a rate; we cannot say how often agents ship the incomplete
+version. The Opus control on this fixture predates the grading step and has **no
+recorded grade**, so it contributes a purity point (0.736) and nothing else; the
+Fable-vs-Opus comparison remains n=4 vs n=1, whose exact permutation floor is
+p=0.400 — untestable by construction (see Limitations). What needs no statistics
+is the disagreement *within* the passing set.
+
 ## Limitations (read before citing)
 
+- **Small n is a *design* limit here, not just a sample-size complaint.** A
+  two-group comparison is scored by an exact permutation test, whose null has
+  `C(n1+n2, n1)` equally likely splits — so the smallest reachable two-sided p is
+  `2/C(n1+n2, n1)` **whatever the data say**. At n=3 vs 3 that floor is **0.100**;
+  at the n=4 vs 1 of finding 12 it is **0.400**. No effect size, however large,
+  can clear 0.05 in those designs, and "not significant" describes the experiment
+  rather than the models. **n=4 per group is the smallest balanced design that can
+  reach p<0.05.** `python3 -m cc_trace stats … --group A --group B` computes this
+  floor and refuses to report a delta or CI at n=1, where both are degenerate by
+  construction. Read effect sizes and intervals in this document, not p-values.
+- **A trap in the isolated fixture, for anyone reproducing finding 12.**
+  `scripts/isolated_setup.sh` applies the instance's *test* patch to the working
+  tree and never commits it. So the fixture ships with its test files already
+  modified **before the agent starts**, and `git status` cannot separate the
+  harness's edits from the agent's — we briefly misread finding 12's runs as test
+  tampering on exactly that basis. For the same reason
+  `git checkout HEAD -- <test file>` restores the *pre-patch* tests, which pass on
+  unfixed code, so "the graded tests pass on a pristine checkout" means the wrong
+  tree was tested, not that the fixture is green. Integrity is therefore checked
+  against a **baseline copy carried in the fixture image**, and the audit's
+  `test_edit` detector reads the *transcript* rather than the filesystem — which
+  is what keeps it correct on a fixture that is dirty by design.
 - **The decisive corners are n=2.** Short-debug and long-refactor are each two runs
   in two repos — replicated tightly, enough to be more than anecdotal, but not yet a
   significance test. A third rep each would get there. Opus 4.8 throughout, with
@@ -601,6 +729,22 @@ python3 scripts/swebench_run.py sympy__sympy-16597 --py python3.9 \
   --rows /tmp/verified_*.json            # setup + red-check only
 python3 scripts/swebench_run.py sympy__sympy-16597 --py python3.9 \
   --rows /tmp/verified_*.json --keep --model opus --run   # + drive & profile
+```
+
+Network-isolated, graded runs (finding 12) — the agent has no route out except
+an allowlisted model API, and the graded tests are verified against a baseline
+before scoring:
+
+```bash
+# build a red, de-identified fixture image (needs network: clone + pip)
+scripts/isolated_setup.sh <fixture-dir> test_infinity test_neg_infinity test_other_symbol
+
+# graded run; writes grade.txt, test-integrity.txt, egress.jsonl, report.html
+REPO=sympy/sympy scripts/isolated_run.sh <prompt-file> claude-fable-5
+
+# then ask whether a cross-group difference is even testable at this n
+python3 -m cc_trace stats reports/*/report.json \
+    --group fable --group fable --group fable --group fable --group opus
 ```
 
 Terminal-Bench (finding 9), Claude Code on a $20 Pro plan, no API key:

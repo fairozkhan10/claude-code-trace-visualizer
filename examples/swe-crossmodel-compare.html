@@ -90,6 +90,29 @@
   <div class="sub" id="meta"></div>
 </header>
 <main>
+  <section style="border-color:#d03b3b;background:rgba(208,59,59,.08)">
+    <h2 style="color:#ff8a8a">&#9888;&#65039; Superseded — do not cite the cross-model comparison</h2>
+    <p class="hint" style="color:#f0d0d0;max-width:88ch">
+      This figure has <b>one run per model per task</b>. Read that way, Fable&nbsp;5
+      looks like it splits phases more cleanly than Opus (0.94 vs 0.89 on sympy,
+      0.93 vs 0.80 on pytest) — and that reading is <b>wrong</b>.
+      <br><br>
+      Replicated at <b>n=4 per model</b> under network isolation
+      (2026&#8209;09&#8209;04), the gap disappears: median purity <b>0.688 for Opus
+      vs 0.692 for Fable&nbsp;5</b>, Cliff's delta <b>0.00</b>, <b>p&nbsp;=&nbsp;1.000</b>
+      — on the first design in this study with the statistical power to detect a
+      difference at all. What actually differs is <i>effort</i>, not structure:
+      Opus spends ~61 median tool calls to Fable's ~27 for the same grade.
+      <br><br>
+      Purity also varies far more run-to-run than a single run can show — Opus
+      ranged 0.558–0.966 on this same instance. See <b>finding 13</b> in
+      <a href="https://github.com/fairozkhan10/claude-code-trace-visualizer/blob/main/FINDINGS.md"
+         style="color:#7fb2ff">FINDINGS.md</a>.
+      The per-run mechanics below (tool mix, phase sequences, call counts) are
+      still accurate; only the <i>cross-model purity claim</i> is retracted.
+    </p>
+  </section>
+
   <section>
     <h2>Cross-run metrics</h2>
     <p class="hint">One row per run — click a column header to sort. <b>sep</b> =

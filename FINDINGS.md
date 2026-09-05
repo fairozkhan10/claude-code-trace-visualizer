@@ -724,6 +724,18 @@ predates this and asserts the gradient — **it should be read as superseded.**
 
 ## Limitations (read before citing)
 
+- **The raw run artifacts are not in this repo — by policy, not oversight.**
+  Every run writes to `reports/`, which is **gitignored**: transcripts carry
+  absolute home-directory paths and machine-local detail, and the rule here is
+  that committed artifacts never do (committed examples are synthetic, generated
+  by `examples/make_sample.py`). So the transcripts, `grade.txt`,
+  `test-integrity.txt` and `egress.jsonl` behind findings 12 and 13 exist on one
+  machine, and a reader cannot inspect them from GitHub. What a reader *can* do
+  is regenerate them: the fixture build and the graded run are two commands (see
+  Reproduce), both deterministic in setup, and the numbers quoted here come out
+  of `report.json`. Where a figure cannot be regenerated at all — finding 6's
+  redundancy magnitudes, whose transcripts have rotated out of
+  `~/.claude/projects` — that is stated explicitly rather than left to trust.
 - **Polling loops silently corrupt purity and redundancy — check the tool mix
   before citing either.** Opus r2 in finding 13 ran `true` **792 times** out of
   880 calls, polling for a backgrounded test suite. `cc_trace` counts each as a

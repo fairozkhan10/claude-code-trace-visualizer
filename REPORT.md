@@ -30,6 +30,16 @@ beyond the brief along the way:
   profiler (clone → drive `claude -p` → confirm red→green → profile).
 - **Honest Bash parsing** — file *and* network I/O done through the shell (the way
   agents actually work) is parsed out of command strings, not ignored.
+- **Network-isolated benchmark harness** — the agent runs on an `--internal`
+  Docker network with no DNS and no route out, reaching the world only through a
+  stdlib allowlist proxy that logs every blocked attempt. Grades `FAIL_TO_PASS`,
+  verifies the graded tests weren't edited, and profiles the run. Built because
+  finding 11 caught a model downloading the upstream fix; runs can go in parallel
+  via a `TAG` namespace.
+- **Statistics (`cc_trace stats`)** — exact permutation tests, Cliff's delta,
+  seeded bootstrap CIs, Holm correction. It leads with the *design floor*
+  `2/C(n1+n2,n1)`: at n=3 per group no result can reach p&lt;0.05 whatever the
+  data, so the tool says so instead of printing a reassuring number.
 
 ## Did we meet the brief?
 
@@ -59,7 +69,7 @@ invariant and a golden-metric snapshot of the committed example.
 ## What we learned
 
 The tool was the deliverable, but using it produced a genuinely interesting result
-— and the *way* it evolved is the real lesson. (Full detail, 11 findings, in
+— and the *way* it evolved is the real lesson. (Full detail, 13 findings, in
 [`FINDINGS.md`](FINDINGS.md).)
 
 1. **The headline finding got better by being wrong twice.** It went from a clean
@@ -85,11 +95,41 @@ The tool was the deliverable, but using it produced a genuinely interesting resu
    **agentpprof** on the same transcripts corroborated our token fix — it reports
    ~1.5–1.9× higher because it doesn't dedupe per message.
 
-4. **Where it stands honestly:** substantially more than directional now, but still
-   one model family on small *n*, and the *long-debug* corner that breaks the phase
-   shift hasn't been captured on a standard benchmark (SWE-bench Lite is too tractable
-   to elicit it — that needs harder, under-specified bugs). The tool is done; the
-   science has a clear, bounded reach left, not an open horizon.
+4. **Closing the network turned the benchmark itself into the finding.** Once the
+   agent physically could not fetch the answer, twelve isolated runs across two
+   models all *passed* — and disagreed with each other about what the fix is.
+   Solution scope ranged from one file to three; some runs found the second-order
+   bug the fix itself introduces (a nondeterministic hang, an `Idx` regression)
+   and others shipped it. **`FAIL_TO_PASS` scores them identically.** The
+   thorough runs also cost 2–3× the median, so scoring on the grade alone
+   selects against them. That's not a model failing a benchmark; it's a benchmark
+   that cannot see what it claims to measure (findings 12–13).
+
+5. **Replication killed our most quotable claim, and that's the point.** Earlier
+   single runs suggested a stronger model splits phases more cleanly (0.944 vs
+   0.89). At n=4 per model the gap is **gone** — medians 0.688 vs 0.692, Cliff's
+   delta 0.00, p=1.000 — in the first design here with the power to detect one.
+   Related: two "obvious" conclusions about run-to-run variance were drawn and
+   retracted within a day, because stability turned out to be a property of the
+   *model-task pair*, not of the metric. Every cell needs its own *n*.
+
+6. **Each measurement tool we built came from a mistake we made.** The
+   design-floor warning came from over-reading a single run; the test-integrity
+   check came from wrongly concluding a model had rewritten its graded tests
+   (the fixture ships them already modified, so `git` cannot attribute them); the
+   polling-loop detector came from nearly publishing a wait loop as the cleanest
+   phase purity on record — 792 no-op calls out of 880 had inflated it. The
+   pattern held every time: when a number surprised us, the fix was to mechanise
+   the check, not to eyeball it once and move on.
+
+7. **Where it stands honestly:** the phase and cache results are solid and
+   replicated; the *cross-model* claims are now a null result rather than a
+   gradient; and the benchmark-validity findings are existence proofs, not rates —
+   we can show that a grade hides fix quality, not how often. Still one model
+   family plus two frontier models, small *n* per cell by construction (an
+   isolated run is minutes-to-hours of real compute), and the raw run artifacts
+   live outside the repo. The tool is done; the science has a clear, bounded
+   reach left, not an open horizon.
 
 ## Takeaway
 

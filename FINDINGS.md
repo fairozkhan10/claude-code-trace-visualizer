@@ -730,12 +730,15 @@ predates this and asserts the gradient — **it should be read as superseded.**
   tool call and phases it `execute`, so the run reads as 831 execute vs 44
   explore, the explore→execute crossover becomes trivially clean, and **purity
   inflates to 0.966 — the highest Opus value on record — while redundancy hits
-  0.94.** Both are artifacts of a wait loop, not signals about the work. Nothing
-  in the tool detects this today. A run whose top command is a no-op (`true`,
-  `:`, bare `sleep`) at high multiplicity should have its phase metrics treated
-  as void; the reliable tell is an explore share near zero (0.05 here) alongside
-  an implausible call count. This is why finding 13 reports a sensitivity
-  analysis with r2 removed rather than quietly averaging it in.
+  0.94.** Both are artifacts of a wait loop, not signals about the work. This is
+  why finding 13 reports a sensitivity analysis with r2 removed rather than
+  quietly averaging it in. **Now mechanised:** `cc_trace` marks no-op calls
+  (`true`, `:`, bare `sleep`, and chains of them) at build time, reports
+  `poll_summary`, raises a `poll_loop` validity flag past 20%, and prints
+  purity as `0.97!` in the compare table — the metrics are deliberately *not*
+  recomputed, since a poll is a call the agent really made and redefining purity
+  would break comparability with every figure above. The flag tells you to
+  discard the run; it doesn't quietly rewrite it.
 - **Run-to-run variance depends on both the model and the task — do not
   generalise stability from one cell.** We got this wrong twice in one day.
   Fable on `sympy-16597` replicated tightly (0.652–0.714, sd 0.028), which

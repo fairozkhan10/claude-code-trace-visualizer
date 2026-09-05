@@ -6,7 +6,8 @@ fixture-path instance-id leak, and the fix stranded in `git stash`.
 """
 import unittest
 
-from cc_trace.parser import Trace, ToolCall, _STASH_PUSH_RE, _STASH_POP_RE
+from cc_trace.parser import (Trace, ToolCall, _STASH_PUSH_RE, _STASH_POP_RE,
+                             _is_noop_command)
 
 
 def _bash(i, cmd, net=None):
@@ -193,6 +194,86 @@ class TestTestEdit(unittest.TestCase):
                      _edit(1, "sympy/core/tests/test_assumptions.py",
                            mode="read")]).validity_audit(graded_tests=self.F2P)
         self.assertTrue(va["clean"])
+
+
+class TestNoopCommand(unittest.TestCase):
+    """What counts as a poll. Strict on purpose: a command that waits *and then
+    does something* is real work, not a poll."""
+
+    def test_shell_noops(self):
+        for cmd in ("true", ":", "sleep 5", "sleep 0.5", "sleep 30s", "sleep 2m"):
+            self.assertTrue(_is_noop_command(cmd), cmd)
+
+    def test_chained_noops_are_still_noops(self):
+        for cmd in ("sleep 30; true", "true && true", ": ; sleep 2",
+                    "sleep 5 || true"):
+            self.assertTrue(_is_noop_command(cmd), cmd)
+
+    def test_real_work_is_not_a_poll(self):
+        for cmd in ("sleep 5 && pytest -q", "pytest -q", "echo hi",
+                    "true && pytest", "sleep 5; python run.py",
+                    "git stash", "sleeper.py", "truediv.py"):
+            self.assertFalse(_is_noop_command(cmd), cmd)
+
+    def test_empty_is_not_a_poll(self):
+        self.assertFalse(_is_noop_command(""))
+        self.assertFalse(_is_noop_command("   "))
+
+
+def _noop(i, cmd="true"):
+    tc = _bash(i, cmd)
+    tc.is_noop = True
+    return tc
+
+
+class TestPollLoop(unittest.TestCase):
+    """Detector 5 — a wait loop that voids the phase-derived metrics."""
+
+    def test_heavy_polling_flags_and_voids(self):
+        calls = [_noop(i) for i in range(9)] + [_bash(9, "pytest -q")]
+        t = _trace(calls)
+        p = t.poll_summary()
+        self.assertEqual((p["n_noop"], p["n_tool_calls"]), (9, 10))
+        self.assertEqual(p["noop_frac"], 0.9)
+        self.assertTrue(p["voids_phase_metrics"])
+        self.assertEqual(p["top_noop"], "true")
+        f = [x for x in t.validity_audit()["flags"] if x["kind"] == "poll_loop"]
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0]["severity"], "warn")
+        self.assertIn("90%", f[0]["detail"])
+
+    def test_a_few_sleeps_do_not_flag(self):
+        # ordinary: wait briefly for a suite, then keep working
+        calls = [_noop(0, "sleep 5")] + [_bash(i, "pytest -q") for i in range(1, 10)]
+        t = _trace(calls)
+        self.assertEqual(t.poll_summary()["noop_frac"], 0.1)
+        self.assertFalse(t.poll_summary()["voids_phase_metrics"])
+        self.assertTrue(t.validity_audit()["clean"])
+
+    def test_threshold_is_exclusive(self):
+        # exactly at 20% is not "past" the threshold
+        calls = [_noop(i) for i in range(2)] + [_bash(i, "pytest") for i in range(2, 10)]
+        self.assertFalse(_trace(calls).poll_summary()["voids_phase_metrics"])
+
+    def test_no_calls_at_all(self):
+        p = _trace([]).poll_summary()
+        self.assertEqual((p["n_noop"], p["noop_frac"]), (0, 0.0))
+        self.assertFalse(p["voids_phase_metrics"])
+        self.assertIsNone(p["top_noop"])
+
+    def test_the_real_opus_r2_shape(self):
+        # 792 `true` polls out of 880 calls drove purity to 0.966 (finding 13)
+        calls = [_noop(i) for i in range(792)] + [
+            _bash(i, "pytest -q") for i in range(792, 880)]
+        p = _trace(calls).poll_summary()
+        self.assertEqual(p["n_noop"], 792)
+        self.assertEqual(p["noop_frac"], 0.9)
+        self.assertTrue(p["voids_phase_metrics"])
+
+    def test_poll_summary_is_in_as_dict(self):
+        d = _trace([_noop(0)]).as_dict()
+        self.assertIn("poll_summary", d)
+        self.assertEqual(d["poll_summary"]["n_noop"], 1)
 
 
 class TestRepoInference(unittest.TestCase):

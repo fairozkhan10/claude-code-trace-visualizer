@@ -356,6 +356,27 @@ _STASH_POP_RE = re.compile(r"\bgit stash\s+(?:pop|apply)\b")
 # agent *writing* one is editing its own answer key — the grade stops measuring
 # the fix and starts measuring the edit. Deliberately broad across ecosystems:
 # a false "warn" costs a human glance, a miss costs a bad number in a paper.
+# A no-op poll: the whole command does nothing but let time pass. `true` and `:`
+# are the shell's own no-ops; a bare `sleep` is the same thing with a delay. The
+# match is deliberately strict — the ENTIRE command must be no-ops joined by
+# `;`/`&&`/`||`, so `sleep 5 && pytest` (a real command that happens to wait) is
+# not a poll, while `true`, `: ; sleep 2`, and `sleep 30; true` are.
+_NOOP_ATOM_RE = re.compile(r"^(?:true|:|sleep\s+[\d.]+[smhd]?)$", re.IGNORECASE)
+
+
+def _is_noop_command(cmd: str) -> bool:
+    """Does this Bash command do nothing but wait?
+
+    Agents poll this way while a backgrounded suite runs. Each poll is a real
+    tool call, but it performs no work — and at high multiplicity it swamps the
+    phase sequence, since every one is classified ``execute``. Detected here at
+    build time from the FULL command (see ToolCall.signature for why never the
+    label).
+    """
+    parts = [p.strip() for p in re.split(r"&&|\|\||;", (cmd or "").strip()) if p.strip()]
+    return bool(parts) and all(_NOOP_ATOM_RE.match(p) for p in parts)
+
+
 def _graded_test_files(selectors) -> set:
     """Normalise pytest-style selectors to plain file paths.
 
@@ -492,6 +513,11 @@ class ToolCall:
     # command: clustering off the truncated label splits one recurring command
     # into several leaves whenever its distinguishing tail sits past 80 chars
     signature: str = ""
+    # True when the call does no work — a `true`/`:`/bare `sleep` poll issued
+    # while waiting on backgrounded work. These are still tool calls the agent
+    # made, so they are counted and kept; but they are *waiting*, not doing, and
+    # in bulk they distort every metric derived from the phase sequence.
+    is_noop: bool = False
 
 
 @dataclass
@@ -588,6 +614,46 @@ class Trace:
             "requests": reqs,
         }
 
+    # A run this far past the threshold is measuring its own wait loop. 20% is
+    # deliberately permissive: a handful of `sleep`s while a suite finishes is
+    # ordinary, and the case this exists for was 90%.
+    NOOP_VOID_THRESHOLD = 0.20
+
+    def poll_summary(self) -> dict:
+        """No-op polling calls, and whether they invalidate the phase metrics.
+
+        Every metric derived from the phase *sequence* — purity, separation,
+        explore share, repeated-work redundancy — assumes each tool call is a
+        unit of work. Polls break that assumption: they are classified
+        ``execute`` (they are not reads), so a run that waits in a loop reads as
+        overwhelmingly execute-phase and its explore→execute crossover comes out
+        trivially clean. Observed for real: an Opus run on ``sympy-16597`` issued
+        ``true`` 792 times out of 880 calls, which drove purity to 0.966 — its
+        highest value on record — and redundancy to 0.94. Both were artifacts of
+        the wait loop (FINDINGS finding 13, and Limitations).
+
+        The metrics are deliberately **not** recomputed here. A poll is a call
+        the agent really made, and silently redefining purity would break
+        comparability with every published figure. This reports the distortion
+        so a reader can discard the run instead.
+        """
+        n = len(self.tool_calls)
+        noops = [tc for tc in self.tool_calls if tc.is_noop]
+        frac = len(noops) / n if n else 0.0
+        top = None
+        if noops:
+            counts: dict[str, int] = {}
+            for tc in noops:
+                counts[tc.label] = counts.get(tc.label, 0) + 1
+            top = max(counts.items(), key=lambda kv: kv[1])[0]
+        return {
+            "n_tool_calls": n,
+            "n_noop": len(noops),
+            "noop_frac": round(frac, 3),
+            "top_noop": top,
+            "voids_phase_metrics": frac > self.NOOP_VOID_THRESHOLD,
+        }
+
     def validity_audit(self, repo: Optional[str] = None,
                        graded_tests=None) -> dict:
         """Benchmark-validity flags: the finding-11 failure modes, mechanised.
@@ -677,6 +743,17 @@ class Trace:
                           "index": None,
                           "detail": f"{pushes} git stash push(es) vs {pops} "
                                     f"pop/apply — work may end the run stashed"})
+
+        # 5. polling loops — they void the phase-derived metrics
+        poll = self.poll_summary()
+        if poll["voids_phase_metrics"]:
+            flags.append({
+                "kind": "poll_loop", "severity": "warn", "index": None,
+                "detail": f"{poll['n_noop']}/{poll['n_tool_calls']} calls "
+                          f"({poll['noop_frac']:.0%}) are no-op polls"
+                          + (f" — {poll['top_noop']!r}" if poll["top_noop"] else "")
+                          + "; purity/separation/redundancy are not meaningful "
+                            "for this run"})
 
         # 4. the agent writing to test files — it may be editing the answer key
         graded = _graded_test_files(graded_tests or self.graded_tests)
@@ -903,6 +980,7 @@ class Trace:
             "file_access": self.file_access(),
             "network_activity": self.network_activity(),
             "validity_audit": self.validity_audit(),
+            "poll_summary": self.poll_summary(),
             "file_graph": self.file_graph(),
             "phase_crossover": self.phase_crossover(),
             "retry_loops": self.retry_loops(),
@@ -1004,6 +1082,7 @@ class _Builder:
                     stash_push=len(_STASH_PUSH_RE.findall(cmd)),
                     stash_pop=len(_STASH_POP_RE.findall(cmd)),
                     signature=_bash_signature(cmd) if name == "Bash" else "",
+                    is_noop=_is_noop_command(cmd) if name == "Bash" else False,
                 )
                 self.pending[tc.id] = tc
                 self.tool_calls.append(tc)

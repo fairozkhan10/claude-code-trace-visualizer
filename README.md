@@ -267,7 +267,8 @@ Everything below is pulled straight from the transcript — nothing is instrumen
 | Success / failure (retry candidates) | `tool_result.is_error` |
 | Files touched (read vs. write) | tool `file_path` **+ shell redirects / here-docs / `tee` / script runs parsed from Bash** |
 | **Network activity** | curl/wget, git remote ops, package installs, ssh/scp, WebFetch/WebSearch/MCP — parsed from commands & tool inputs |
-| **Benchmark-validity flags** | solution-channel network (PR diffs, commit searches against the repo under test), instance-id leaks in path/prompt, work stranded in `git stash`, and **writes to the tests the run is graded on** (`--graded-test`, e.g. a SWE-bench `f2p.txt`) — the finding-11 failure modes, flagged for review |
+| **Benchmark-validity flags** | solution-channel network (PR diffs, commit searches against the repo under test), instance-id leaks in path/prompt, work stranded in `git stash`, **writes to the tests the run is graded on** (`--graded-test`, e.g. a SWE-bench `f2p.txt`), and **polling loops that void the phase metrics** — the finding-11/12/13 failure modes, flagged for review |
+| **Poll detection** | no-op calls (`true`, `:`, bare `sleep`) counted at build time. Past 20% of calls the run is flagged and its purity prints as `0.97!` — a wait loop is classified `execute`, so it reads as execute-dominated and its crossover comes out trivially clean. Metrics are flagged, never silently recomputed |
 | Tokens (input / output / cache-read / cache-write) | `message.usage` per turn |
 | Context growth | cumulative cache-read + input per turn |
 | Estimated cost (USD) | usage × per-model price table |

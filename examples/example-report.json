@@ -135,9 +135,23 @@
   "validity_audit": {
     "repo_under_test": null,
     "repo_source": null,
-    "n_flags": 0,
-    "clean": true,
-    "flags": []
+    "n_flags": 1,
+    "clean": false,
+    "flags": [
+      {
+        "kind": "test_edit",
+        "severity": "warn",
+        "index": 13,
+        "detail": "wrote test file tests/fixtures/expected.json"
+      }
+    ]
+  },
+  "poll_summary": {
+    "n_tool_calls": 15,
+    "n_noop": 0,
+    "noop_frac": 0.0,
+    "top_noop": null,
+    "voids_phase_metrics": false
   },
   "file_graph": {
     "window": 4,
@@ -317,7 +331,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": "Bash:ls -R src tests"
+      "signature": "Bash:ls -R src tests",
+      "is_noop": false
     },
     {
       "index": 1,
@@ -341,7 +356,8 @@
       ],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": "Bash:git fetch origin && git log --oneline -N"
+      "signature": "Bash:git fetch origin && git log --oneline -N",
+      "is_noop": false
     },
     {
       "index": 2,
@@ -364,7 +380,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": ""
+      "signature": "",
+      "is_noop": false
     },
     {
       "index": 3,
@@ -387,7 +404,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": ""
+      "signature": "",
+      "is_noop": false
     },
     {
       "index": 4,
@@ -410,7 +428,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": ""
+      "signature": "",
+      "is_noop": false
     },
     {
       "index": 5,
@@ -429,7 +448,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": "Bash:python -m pytest -q"
+      "signature": "Bash:python -m pytest -q",
+      "is_noop": false
     },
     {
       "index": 6,
@@ -453,7 +473,8 @@
       ],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": "Bash:pip install pytest-mock"
+      "signature": "Bash:pip install pytest-mock",
+      "is_noop": false
     },
     {
       "index": 7,
@@ -477,7 +498,8 @@
       ],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": ""
+      "signature": "",
+      "is_noop": false
     },
     {
       "index": 8,
@@ -500,7 +522,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": ""
+      "signature": "",
+      "is_noop": false
     },
     {
       "index": 9,
@@ -523,7 +546,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": ""
+      "signature": "",
+      "is_noop": false
     },
     {
       "index": 10,
@@ -542,7 +566,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": "Bash:python -m pytest -q"
+      "signature": "Bash:python -m pytest -q",
+      "is_noop": false
     },
     {
       "index": 11,
@@ -565,7 +590,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": ""
+      "signature": "",
+      "is_noop": false
     },
     {
       "index": 12,
@@ -584,7 +610,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": "Bash:python -m pytest -q"
+      "signature": "Bash:python -m pytest -q",
+      "is_noop": false
     },
     {
       "index": 13,
@@ -609,7 +636,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": "Bash:python PATH > PATH"
+      "signature": "Bash:python PATH > PATH",
+      "is_noop": false
     },
     {
       "index": 14,
@@ -632,7 +660,8 @@
       "network": [],
       "stash_push": 0,
       "stash_pop": 0,
-      "signature": "Bash:cat > PATH << STR - fix normalize() EOF"
+      "signature": "Bash:cat > PATH << STR - fix normalize() EOF",
+      "is_noop": false
     }
   ],
   "turns": [

@@ -99,8 +99,12 @@ def summarize(d: dict) -> dict[str, Any]:
     na = d.get("network_activity", {}) or {}
     rw = d.get("repeated_work", {}) or {}
     va = d.get("validity_audit", {}) or {}
+    ps = d.get("poll_summary", {}) or {}
     return {
         "validity_flags": va.get("n_flags", 0),
+        "noop_frac": ps.get("noop_frac"),
+        # when true, this row's purity/sep/redun describe a wait loop
+        "polls_void": bool(ps.get("voids_phase_metrics")),
         "redundant_calls": rw.get("redundant_calls", 0),
         "redundant_frac": rw.get("redundant_frac"),
         "net_total": na.get("total", 0),
@@ -146,7 +150,11 @@ def render_text(rows: list[dict]) -> str:
         ("redun%", None, lambda r: _fmt(r["redundant_frac"])),
         ("expl%", None, lambda r: _fmt(r["explore_share"])),
         ("sep", None, lambda r: _fmt(r["separation"])),
-        ("pure", None, lambda r: _fmt(r["purity"])),
+        # a '!' marks a run whose phase metrics are a polling artifact, not a
+        # measurement — silently printing 0.97 next to real values invites
+        # exactly the misreading that produced FINDINGS finding 13's caveat
+        ("pure", None, lambda r: _fmt(r["purity"]) + ("!" if r.get("polls_void") else "")),
+        ("poll%", None, lambda r: _fmt(r.get("noop_frac"))),
         ("cache%", None, lambda r: _fmt(r["cache_read_share"])),
         ("net", None, lambda r: r["net_total"] or "—"),
         ("flags", None, lambda r: r.get("validity_flags", 0) or "—"),
@@ -165,6 +173,13 @@ def render_text(rows: list[dict]) -> str:
                "(1.0 = perfect phase shift, ~0.5 = interleaved)")
     out.append("cache% = cache-read share of read tokens (↑ more KV-cache-heavy / "
                "decode-dominated)")
+    if any(r.get("polls_void") for r in rows):
+        out.append("poll% = share of calls that are no-op polls (`true`, bare "
+                   "`sleep`) issued while waiting on backgrounded work.")
+        out.append("  !  = phase metrics for this row are a POLLING ARTIFACT — "
+                   "polls are classified `execute`, so a wait loop reads as")
+        out.append("       execute-dominated and its crossover comes out "
+                   "trivially clean. Do not cite pure/sep/redun for that run.")
     out.append("phase sequence — '|' marks the explore→execute crossover point:")
     for r in rows:
         seq = r["sequence"] or ""
@@ -314,7 +329,7 @@ document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':
 const COLS=[['run','label'],['calls','n_tool_calls'],['turns','n_turns'],
   ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],['loops','n_retry_loops'],
   ['redun%','redundant_frac'],
-  ['expl%','explore_share'],['sep','separation'],['pure','purity'],
+  ['expl%','explore_share'],['sep','separation'],['pure','purity'],['poll%','noop_frac'],
   ['cache%','cache_read_share'],['net','net_total'],['flags','validity_flags'],
   ['top tool','top_tool']];
 let sortK=null, sortDir=1;
@@ -330,7 +345,9 @@ function drawTbl(){
     if(k==='duration') v=v.toFixed(0);
     else if(k==='cost') v=v.toFixed(2);
     else if(k==='purity' && v!=null)
-      v=`${v.toFixed(2)}<span class="pbar"><i style="width:${100*Math.max(0,Math.min(1,r[k]))}%"></i></span>`;
+      // flag rows whose phase metrics are a polling artifact (see render_text)
+      v=`${v.toFixed(2)}${r.polls_void?'<b title="polling artifact — do not cite" style="color:var(--error)">!</b>':''}`
+        +`<span class="pbar"><i style="width:${100*Math.max(0,Math.min(1,r[k]))}%"></i></span>`;
     else v=esc(fmt(v));
     const cls=(i?'num':'')+((k==='validity_flags'&&r[k]>0)?' flag':'');
     return `<td class="${cls}">${v}</td>`;

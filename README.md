@@ -190,7 +190,20 @@ scripts/isolated_setup.sh <fixture-dir> test_infinity test_neg_infinity
 
 # 2. graded run with no egress but the model API
 scripts/isolated_run.sh <prompt-file> opus
+
+# replications in parallel — TAG namespaces the containers and networks
+TAG=-a scripts/isolated_run.sh <prompt-file> opus reports/run-a &
+TAG=-b scripts/isolated_run.sh <prompt-file> opus reports/run-b &
+wait
 ```
+
+Replications are independent and **~90% of a run's wall-clock is the agent
+re-running test suites locally**, not model latency — so running two or three at
+once is the one lever that meaningfully shortens a batch. Each `TAG` gets its own
+`--internal` network rather than sharing one: concurrent agents must not be able
+to reach each other, or the isolation being claimed isn't the isolation being
+run. Watch memory rather than CPU — Docker Desktop's VM has a fixed RAM
+allocation, and a heavy suite can take ~1.5 GB per run.
 
 The proxy logs every attempt, so `egress.jsonl` records what the agent *tried*
 to fetch — a signal the transcript can't give you, since a blocked request may

@@ -28,8 +28,17 @@ REPO_ROOT="$(cd "$HERE/.." && pwd)"
 OUT="${3:-$REPO_ROOT/reports/isolated-$(date +%Y%m%d-%H%M%S)}"
 
 FIXTURE_IMAGE="${FIXTURE_IMAGE:-cc-isolated-fixture:latest}"
-NET_INT="${NET_INT:-cc-iso-int}"
-NET_EXT="${NET_EXT:-cc-iso-ext}"
+# TAG namespaces every container and network this run creates, so several runs
+# can execute concurrently. Replications are independent, and the wall-clock is
+# dominated by the agent re-running test suites (~90% of a run is local pytest,
+# not model latency) — so parallelism is the one lever that actually shortens a
+# batch. Each run still gets its OWN --internal network: sharing one would let
+# concurrent agents reach each other, which is not the isolation we claim.
+TAG="${TAG:-}"
+RUN_NAME="cc-iso-run${TAG}"
+PROXY_NAME="cc-iso-proxy${TAG}"
+NET_INT="${NET_INT:-cc-iso-int${TAG}}"
+NET_EXT="${NET_EXT:-cc-iso-ext${TAG}}"
 # Default allowlist is the model API alone. Add hosts the *task* legitimately
 # needs (e.g. pypi.org if it must install) — but never a source-hosting domain,
 # which is the retrieval path being closed.
@@ -45,11 +54,11 @@ fi
 echo "=== bring up isolated network + allowlist proxy (allow: $ALLOW) ==="
 docker network inspect "$NET_INT" >/dev/null 2>&1 || docker network create --internal "$NET_INT" >/dev/null
 docker network inspect "$NET_EXT" >/dev/null 2>&1 || docker network create "$NET_EXT" >/dev/null
-docker rm -f cc-iso-proxy >/dev/null 2>&1 || true
-docker run -d --name cc-iso-proxy --network "$NET_EXT" \
+docker rm -f $PROXY_NAME >/dev/null 2>&1 || true
+docker run -d --name $PROXY_NAME --network "$NET_EXT" \
   -v "$HERE:/scripts:ro" -v "$OUT:/out" python:3.12-slim \
   python3 /scripts/egress_proxy.py --allow $ALLOW --log /out/egress.jsonl >/dev/null
-docker network connect "$NET_INT" cc-iso-proxy
+docker network connect "$NET_INT" $PROXY_NAME
 sleep 1
 
 # NOTE: the agent container is started detached with `sleep infinity` and the
@@ -57,18 +66,18 @@ sleep 1
 # process makes the container exit the moment it finishes — taking the graded
 # filesystem state with it before it can be inspected.
 echo "=== start agent container (isolated) ==="
-docker rm -f cc-iso-run >/dev/null 2>&1 || true
-docker run -d --name cc-iso-run --network "$NET_INT" \
+docker rm -f $RUN_NAME >/dev/null 2>&1 || true
+docker run -d --name $RUN_NAME --network "$NET_INT" \
   -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN" \
-  -e HTTPS_PROXY="http://cc-iso-proxy:8888" -e HTTP_PROXY="http://cc-iso-proxy:8888" \
-  -e https_proxy="http://cc-iso-proxy:8888" -e http_proxy="http://cc-iso-proxy:8888" \
+  -e HTTPS_PROXY="http://$PROXY_NAME:8888" -e HTTP_PROXY="http://$PROXY_NAME:8888" \
+  -e https_proxy="http://$PROXY_NAME:8888" -e http_proxy="http://$PROXY_NAME:8888" \
   -v "$OUT/claude-home:/home/agent/.claude" \
   -w /home/agent/task/repo \
   "$FIXTURE_IMAGE" sleep infinity >/dev/null
 
 echo "=== graded run: model=$MODEL ==="
 set +e
-docker exec -w /home/agent/task/repo cc-iso-run \
+docker exec -w /home/agent/task/repo $RUN_NAME \
   claude -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --dangerously-skip-permissions \
   2>&1 | tee "$OUT/agent-stdout.txt" | tail -30
 set -e
@@ -79,7 +88,7 @@ echo "=== test integrity: did the agent edit its own answer key? ==="
 # shipped. Compare against the baseline copy (not git — the test patch is
 # uncommitted, so HEAD has the pre-patch tests) and restore before grading, so
 # the number below always measures the fix rather than the edit.
-docker exec -w /home/agent/task/repo cc-iso-run bash -lc '
+docker exec -w /home/agent/task/repo $RUN_NAME bash -lc '
   TASK=/home/agent/task
   if [ ! -d "$TASK/test_baseline" ]; then
     echo "NO BASELINE — fixture predates the integrity check; grade is UNVERIFIED"
@@ -101,14 +110,14 @@ docker exec -w /home/agent/task/repo cc-iso-run bash -lc '
 
 echo
 echo "=== GRADE: FAIL_TO_PASS in the final tree ==="
-docker exec -w /home/agent/task/repo cc-iso-run bash -lc \
+docker exec -w /home/agent/task/repo $RUN_NAME bash -lc \
   '/home/agent/task/.venv/bin/python -m pytest -q $(cat /home/agent/task/f2p.txt)' \
   2>&1 | tail -5 | tee "$OUT/grade.txt" || true
 
 echo
 echo "=== stranded-work check (finding 11 failure mode #2) ==="
-docker exec -w /home/agent/task/repo cc-iso-run git status --short | tee "$OUT/git-status.txt"
-docker exec -w /home/agent/task/repo cc-iso-run git stash list | tee "$OUT/git-stash.txt"
+docker exec -w /home/agent/task/repo $RUN_NAME git status --short | tee "$OUT/git-status.txt"
+docker exec -w /home/agent/task/repo $RUN_NAME git stash list | tee "$OUT/git-stash.txt"
 [ -s "$OUT/git-stash.txt" ] && echo "  ^^ NON-EMPTY STASH — fix may be stranded, grade is not trustworthy"
 
 echo
@@ -122,11 +131,11 @@ T=$(find "$OUT/claude-home/projects" -name '*.jsonl' | head -1)
 # 'high' rather than a generic warning. REPO (optional, e.g. sympy/sympy) scopes
 # solution-channel severity; it is read here on the host, after the run, so it
 # never reaches the agent and cannot re-identify the fixture.
-F2P="$(docker exec cc-iso-run cat /home/agent/task/f2p.txt 2>/dev/null || true)"
+F2P="$(docker exec $RUN_NAME cat /home/agent/task/f2p.txt 2>/dev/null || true)"
 python3 -m cc_trace "$T" -o "$OUT/report.html" --json \
   ${F2P:+--graded-test "$F2P"} ${REPO:+--repo "$REPO"}
 
 echo
 echo "done — artifacts in $OUT"
-echo "container cc-iso-run left up for inspection; tear down with:"
-echo "  docker rm -f cc-iso-run cc-iso-proxy"
+echo "container $RUN_NAME left up for inspection; tear down with:"
+echo "  docker rm -f $RUN_NAME $PROXY_NAME"

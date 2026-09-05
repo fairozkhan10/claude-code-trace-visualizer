@@ -51,6 +51,13 @@ runs. Think of it as ground-truthing the paper before anyone optimizes for it.
   (tested); de-identification does **not** reliably stop retrieval — a follow-up run
   re-found the PR by *searching GitHub with the issue's wording*. The phase framework
   stayed legible through all of it.
+- **The cross-model capability gradient does not replicate — it was an n=1
+  artifact.** At n=4 per model on the same isolated fixture, Opus and Fable 5
+  have **indistinguishable phase purity** (medians 0.688 vs 0.692, Cliff's delta
+  0.00, p=1.000) in the first design here with the statistical power to say so.
+  What differs is *effort* — Opus takes 61.5 median tool calls to Fable's 27 for
+  the same grade. Earlier single-run comparisons in findings 10/11, and the
+  cross-model figure in `examples/`, assert a gradient that is not there.
 - **Close the network and the score is *still* wrong — now with honest agents.**
   Four network-isolated runs of the same model on the same bug all pass, with zero
   retrieval attempts and verified-untouched tests — and produce **four different
@@ -463,6 +470,12 @@ amendment): Fable 5 de-identified purity **0.929** vs Opus's 0.80 on
 **diagnostic difficulty *relative to model capability***: the same bug sits at a
 different place on the continuum for a different model.
 
+> **SUPERSEDED by finding 13.** Both points above are single runs. Replicated at
+> n=4 per model under isolation, the gap vanishes: Opus 0.688 vs Fable 0.692,
+> Cliff's delta 0.00, p=1.000. Keep the *diagnostic-difficulty* framing, which
+> rests on the task-type × difficulty evidence in finding 2; drop the
+> **capability-relative** extension — it does not replicate.
+
 ### 11. Stronger agents break the *benchmark* before they break the phase model
 
 Finding 10 needed a cross-model check: does a stronger model re-clean the phase on
@@ -537,6 +550,9 @@ capability-relative gradient **n=2** (sympy: 0.944 vs 0.89; pytest: 0.929 vs
 autonomous-instruction mitigation **n=2** (no stranding either time). The clean
 network here doesn't retire failure mode 1 — retrieval is stochastic (run 3 vs
 run 4 above), so a quiet run is consistent, not exculpatory.
+**The purity half of that gradient is superseded by finding 13** (n=4 per model:
+no difference). The stranding and retrieval observations in this finding are
+unaffected — they are existence proofs, not comparisons.
 
 *Amendment 2 — the isolated replication (2026-09-03) revises two claims above.*
 (a) **The 0.944 does not replicate.** Four network-isolated Fable 5 runs on this
@@ -643,14 +659,92 @@ until they are re-run under isolation.
 *Scope:* one model, one instance, n=4. The solution-scope result is an
 **existence proof** — four passing runs, four different patches, one materially
 more complete — not a rate; we cannot say how often agents ship the incomplete
-version. The Opus control on this fixture predates the grading step and has **no
-recorded grade**, so it contributes a purity point (0.736) and nothing else; the
-Fable-vs-Opus comparison remains n=4 vs n=1, whose exact permutation floor is
-p=0.400 — untestable by construction (see Limitations). What needs no statistics
-is the disagreement *within* the passing set.
+version. What needs no statistics is the disagreement *within* the passing set.
+
+*Amendment — it replicates on Opus (2026-09-04), n=8 across two models.* Four
+isolated Opus runs on the same fixture, all `3 passed`, all integrity-verified,
+spread the same way:
+
+| model | run | files changed beyond `core/assumptions.py` |
+|---|---|---|
+| Fable | r1, r2, r3 | — |
+| Fable | r4 | `core/power.py` (the induced `Pow` hang) |
+| Opus | r1, r3 | — |
+| Opus | r2 | `tensor/indexed.py` (an `Idx` regression its fix introduced) |
+| Opus | r4 | `printing/tree.py`, `tensor/indexed.py` |
+
+**Eight passing runs, solution scope from one file to three, one identical
+grade.** Opus r2 and r4 independently found a *different* second-order breakage
+than Fable r4 did — the `Idx` regression rather than the `Pow` hang — which says
+the incomplete fix has more than one way to be incomplete, and that `FAIL_TO_PASS`
+sees none of them. The blindness is a property of the benchmark, not of a model.
+
+### 13. The cross-model purity gap does not survive replication
+
+Findings 10 and 11 built a **capability gradient**: a stronger model splits
+phases more cleanly on the same hard bug (0.944 vs 0.89 on sympy, 0.929 vs 0.80
+on pytest). Each cell was one run. With the isolated harness and
+`cc_trace stats` we can finally test it — **n=4 vs n=4, exact permutation floor
+p=0.0286, the first design in this study that could reach significance at all.**
+
+| | purity (4 runs) | median |
+|---|---|---:|
+| Opus | 0.558 / 0.966 / 0.750 / 0.620 | **0.688** |
+| Fable 5 | 0.714 / 0.704 / 0.652 / 0.679 | **0.692** |
+
+```
+purity          delta  0.00 (negligible)   p = 1.000
+n_tool_calls    delta  0.62 (large)        p = 0.200   (61.5 vs 27)
+redundant_frac  delta  0.44 (medium)       p = 0.400
+duration        delta  0.38 (medium)       p = 0.486
+```
+
+**There is no purity difference.** Cliff's delta is 0.00 — the medians differ by
+0.004, well inside the run-to-run noise of either model. The gradient was an
+artifact of comparing single runs.
+
+Two honest qualifications, in opposite directions. **Opus r2 is metrically
+degenerate** (see Limitations): a polling loop inflates its purity to 0.966, and
+it is the only Opus run above Fable's range. Dropping it gives Opus median 0.625
+vs Fable 0.692 — Cliff's delta −0.33, *medium, and pointing the other way* — but
+at n=3 vs 4 the floor is 0.057 and nothing is testable. So the primary analysis
+says "no difference" and the sensitivity analysis says "if anything, the reverse."
+**Neither supports the published gradient.**
+
+What does survive is an **effort** difference, not a structural one: Opus spent
+**61.5 median tool calls to Fable's 27** and roughly 2.2× the wall-clock, for the
+same grade and the same phase structure. The models differ in how much work they
+do, not in the shape of it — which is the phase model's own claim (findings 2, 7)
+holding across a capability gap that was supposed to break it.
+
+*Scope:* one instance (`sympy-16597`), one harness, n=4 per cell. A null result
+at n=4 rules out only *large* effects; a real gap of a few hundredths would need
+far more runs. The cross-task figure `examples/swe-crossmodel-compare.html`
+predates this and asserts the gradient — **it should be read as superseded.**
 
 ## Limitations (read before citing)
 
+- **Polling loops silently corrupt purity and redundancy — check the tool mix
+  before citing either.** Opus r2 in finding 13 ran `true` **792 times** out of
+  880 calls, polling for a backgrounded test suite. `cc_trace` counts each as a
+  tool call and phases it `execute`, so the run reads as 831 execute vs 44
+  explore, the explore→execute crossover becomes trivially clean, and **purity
+  inflates to 0.966 — the highest Opus value on record — while redundancy hits
+  0.94.** Both are artifacts of a wait loop, not signals about the work. Nothing
+  in the tool detects this today. A run whose top command is a no-op (`true`,
+  `:`, bare `sleep`) at high multiplicity should have its phase metrics treated
+  as void; the reliable tell is an explore share near zero (0.05 here) alongside
+  an implausible call count. This is why finding 13 reports a sensitivity
+  analysis with r2 removed rather than quietly averaging it in.
+- **Run-to-run variance depends on both the model and the task — do not
+  generalise stability from one cell.** We got this wrong twice in one day.
+  Fable on `sympy-16597` replicated tightly (0.652–0.714, sd 0.028), which
+  suggested purity was simply a stable metric; Fable on `pytest-10356` then gave
+  0.684 / 0.895 / 0.941, a **range of 0.257** on the same harness. That looked
+  like task-dependence — until Opus on the *same sympy instance* produced
+  0.558–0.966 (0.558–0.750 excluding the degenerate run). Stability is a
+  property of the model-task pair, so **every cell needs its own n**, and a
+  tight cell is not evidence that a neighbouring one will be tight.
 - **Small n is a *design* limit here, not just a sample-size complaint.** A
   two-group comparison is scored by an exact permutation test, whose null has
   `C(n1+n2, n1)` equally likely splits — so the smallest reachable two-sided p is

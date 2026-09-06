@@ -96,8 +96,8 @@ The tool was the deliverable, but using it produced a genuinely interesting resu
    ~1.5–1.9× higher because it doesn't dedupe per message.
 
 4. **Closing the network turned the benchmark itself into the finding.** Once the
-   agent physically could not fetch the answer, twelve isolated runs across two
-   models all *passed* — and disagreed with each other about what the fix is.
+   agent physically could not fetch the answer, eleven graded isolated runs
+   across two models all *passed* — and disagreed with each other about the fix.
    Solution scope ranged from one file to three; some runs found the second-order
    bug the fix itself introduces (a nondeterministic hang, an `Idx` regression)
    and others shipped it. **`FAIL_TO_PASS` scores them identically.** The

@@ -310,7 +310,7 @@ and only *long* debugging dissolves into an interleaved loop.
 | **[`README.md`](README.md)** (this file) | what the tool is and how to run it |
 | **[`FINDINGS.md`](FINDINGS.md)** | the research — 11 findings, validated against an eBPF tracer, SWE-bench Lite & Verified, Terminal-Bench, three models, and a peer tool |
 | **[`REPORT.md`](REPORT.md)** | a short, honest project report: the brief, what got built, what we learned |
-| `examples/` | sample outputs (`example-report.html`, `example-flame.html`, `terminal-bench-compare.html`, `swe-crossmodel-compare.html`) — open without running anything |
+| `examples/` | sample outputs (`example-report.html`, `example-flame.html`, `terminal-bench-compare.html`, `swe-crossmodel-compare.html` — **retracted, see finding 13**, and `isolated-runs-compare.html` — the eleven graded network-isolated runs behind findings 12–13) — open without running anything |
 
 ---
 

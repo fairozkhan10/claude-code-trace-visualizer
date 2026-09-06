@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code Trace — compare</title>
+<style>
+  :root { color-scheme:dark;
+    --page:#0a0a0c; --panel:#141419; --panel-2:#191920; --line:rgba(255,255,255,.08);
+    --line-2:rgba(255,255,255,.16); --ink:#f5f5f7; --ink-2:#b9bac2; --muted:#8f9099;
+    --explore:#3987e5; --execute:#d95926; --error:#d03b3b; --violet:#9085e9;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --ease:cubic-bezier(.22,.8,.24,1); }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  header { padding:52px 36px 34px; border-bottom:1px solid var(--line);
+    background:radial-gradient(1000px 380px at 12% -20%, rgba(57,135,229,.13), transparent 60%),
+               radial-gradient(800px 340px at 92% 130%, rgba(217,89,38,.09), transparent 60%),
+               var(--page); }
+  .eyebrow { font:600 11px/1 var(--mono); letter-spacing:.32em; color:var(--muted);
+    text-transform:uppercase; margin:0 0 14px; }
+  .eyebrow b { color:var(--explore); font-weight:600; }
+  h1 { margin:0; font-weight:800; letter-spacing:-.035em; line-height:.96;
+    font-size:clamp(34px, 6.5vw, 76px); text-transform:uppercase; }
+  h1 .dim { color:var(--muted); font-weight:200; }
+  .sub { color:var(--muted); font:12px/1.7 var(--mono); margin-top:14px; }
+  main { padding:32px 36px 80px; max-width:1240px; margin:0 auto; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:24px 26px; margin-bottom:26px; opacity:0; transform:translateY(14px);
+    animation:rev .7s var(--ease) forwards; }
+  section:nth-of-type(2){ animation-delay:.12s } section:nth-of-type(3){ animation-delay:.24s }
+  @keyframes rev { to { opacity:1; transform:none; } }
+  h2 { margin:0 0 4px; font-size:13px; font-weight:700; letter-spacing:.22em;
+    text-transform:uppercase; }
+  h2::before { content:""; display:inline-block; width:8px; height:8px; border-radius:2px;
+    margin-right:10px; vertical-align:1px;
+    background:linear-gradient(135deg, var(--explore), var(--execute)); }
+  .hint { color:var(--muted); font-size:12.5px; margin:6px 0 16px; max-width:88ch; }
+  .well { overflow-x:auto; border:1px solid var(--line); border-radius:10px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line);
+    white-space:nowrap; }
+  thead th { position:sticky; top:0; background:var(--panel-2); color:var(--muted);
+    font:600 10.5px var(--mono); letter-spacing:.14em; text-transform:uppercase;
+    cursor:pointer; user-select:none; transition:color .2s; }
+  thead th:hover { color:var(--ink); }
+  thead th .arr { opacity:.6; font-size:9px; }
+  tbody tr { transition:background .15s; }
+  tbody tr:hover { background:rgba(255,255,255,.03); }
+  tbody tr:last-child td { border-bottom:none; }
+  td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td.flag { color:var(--error); font-weight:700; }
+  .pbar { display:inline-block; width:52px; height:5px; border-radius:3px;
+    background:var(--panel-2); vertical-align:2px; margin-left:8px; overflow:hidden; }
+  .pbar i { display:block; height:100%;
+    background:linear-gradient(90deg, var(--explore), var(--execute)); }
+  .seqrow { margin:14px 0; }
+  .seqcap { color:var(--muted); font:12px var(--mono); margin-bottom:6px; }
+  .seqcap b { color:var(--ink); font-weight:600; }
+  .ribbon { display:flex; flex-wrap:wrap; gap:2.5px; }
+  .ribbon i { width:13px; height:26px; border-radius:2.5px; opacity:0;
+    transform:translateY(8px); }
+  .ribbon i.E { background:var(--explore); }
+  .ribbon i.X { background:var(--execute); }
+  .ribbon i.xo { width:3px; background:var(--ink); height:32px; margin-top:-3px; }
+  @keyframes rib { to { opacity:.95; transform:none; } }
+  .mix { display:flex; height:16px; border-radius:4px; overflow:hidden; min-width:140px;
+    gap:1px; background:var(--page); }
+  .mix span { display:block; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px; font-size:12px; color:var(--muted);
+    margin-top:12px; }
+  .chip { display:inline-flex; align-items:center; gap:7px; padding:4px 11px;
+    border:1px solid var(--line); border-radius:999px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:3px; }
+  code { font-family:var(--mono); font-size:12px; color:var(--ink-2); }
+  footer { text-align:center; color:var(--muted); font:11px var(--mono);
+    letter-spacing:.2em; text-transform:uppercase; padding:0 0 40px; }
+  @media (prefers-reduced-motion: reduce) {
+    *,*::before,*::after { animation-duration:.001s !important;
+      transition-duration:.001s !important; }
+    section,.ribbon i { opacity:1; transform:none; } }
+</style>
+</head>
+<body>
+<header>
+  <p class="eyebrow"><b>&#9679;</b> Claude Code · Workload Traces</p>
+  <h1><span class="dim">Run</span> Comparison</h1>
+  <div class="sub" id="meta"></div>
+</header>
+<main>
+  <section>
+    <h2>Cross-run metrics</h2>
+    <p class="hint">One row per run — click a column header to sort. <b>sep</b> =
+      execute_pos − explore_pos: higher means a cleaner explore→execute phase shift;
+      near zero means explore and execute interleave (an explore/act loop).
+      <b>cache%</b> = cache-read share of read tokens — the KV-cache-reuse /
+      decode-dominated signal.</p>
+    <div class="well"><table id="tbl"></table></div>
+  </section>
+
+  <section>
+    <h2>Phase sequence per run</h2>
+    <p class="hint">Each block is one phased tool call in order — front of the run
+      on the left; the white tick marks the explore→execute crossover. Watch whether
+      <span style="color:var(--explore)">explore</span> front-loads before
+      <span style="color:var(--execute)">execute</span>.</p>
+    <div id="seqs"></div>
+    <div class="legend">
+      <span class="chip"><i class="dot" style="background:var(--explore)"></i>explore / read</span>
+      <span class="chip"><i class="dot" style="background:var(--execute)"></i>execute / write</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tool mix per run</h2>
+    <p class="hint">Relative share of tool calls by tool — search/read-heavy vs.
+      Bash/edit-heavy.</p>
+    <table id="mix"></table>
+  </section>
+</main>
+<footer>cc_trace · offline · self-contained</footer>
+
+<script id="data" type="application/json">[{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":4,"redundant_frac":0.19,"net_total":1,"net_kinds":[{"kind":"package","count":1}],"crossover_pos":0.238,"purity":0.714,"crossover_index":5,"label":"fable sympy r1","session":"417e3180","n_tool_calls":21,"n_turns":22,"duration":850.8400001525879,"cost":0.4738776,"n_errors":1,"n_retry_loops":0,"explore":11,"execute":10,"explore_share":0.524,"tool_mix":{"Bash":17,"Edit":2,"Read":1,"ToolSearch":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":10121,"sequence":"EEEEEXXXEXEXXXXXEEXEE","explore_pos":0.455,"execute_pos":0.55,"separation":0.095},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":7,"redundant_frac":0.233,"net_total":2,"net_kinds":[{"kind":"package","count":2}],"crossover_pos":0.222,"purity":0.704,"crossover_index":6,"label":"fable sympy r2","session":"1e6b0677","n_tool_calls":30,"n_turns":27,"duration":872.8139998912811,"cost":0.7622586,"n_errors":2,"n_retry_loops":0,"explore":14,"execute":13,"explore_share":0.519,"tool_mix":{"Bash":20,"Edit":3,"Monitor":3,"Read":2,"ToolSearch":2},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":19747,"sequence":"EEEEEEXXXXXXEEXXEEXXXEEEXXE","explore_pos":0.453,"execute_pos":0.55,"separation":0.097},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":5,"redundant_frac":0.208,"net_total":1,"net_kinds":[{"kind":"package","count":1}],"crossover_pos":0.174,"purity":0.652,"crossover_index":4,"label":"fable sympy r3","session":"5c19497a","n_tool_calls":24,"n_turns":20,"duration":829.8100001811981,"cost":0.57852735,"n_errors":1,"n_retry_loops":0,"explore":12,"execute":11,"explore_share":0.522,"tool_mix":{"Bash":18,"Edit":3,"Read":1,"ToolSearch":1,"Monitor":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":17130,"sequence":"EEEEXXXXEXEXXXEXEEXEEEX","explore_pos":0.496,"execute_pos":0.504,"separation":0.008},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":14,"redundant_frac":0.264,"net_total":2,"net_kinds":[{"kind":"package","count":2}],"crossover_pos":0.075,"purity":0.679,"crossover_index":4,"label":"fable sympy r4","session":"d1b01756","n_tool_calls":53,"n_turns":50,"duration":2309.476000070572,"cost":1.18298835,"n_errors":2,"n_retry_loops":1,"explore":21,"execute":32,"explore_share":0.396,"tool_mix":{"Bash":47,"Edit":5,"Read":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":26823,"sequence":"EEEEXXXXXXXEEEEXEXXXXXEEXEEXXXXEEXXEEEEEEXXXXXXXXXXXX","explore_pos":0.418,"execute_pos":0.554,"separation":0.136},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":10,"redundant_frac":0.233,"net_total":1,"net_kinds":[{"kind":"package","count":1}],"crossover_pos":0.535,"purity":0.558,"crossover_index":23,"label":"opus sympy r1","session":"454bd746","n_tool_calls":43,"n_turns":40,"duration":1158.085000038147,"cost":4.2571515,"n_errors":1,"n_retry_loops":0,"explore":24,"execute":19,"explore_share":0.558,"tool_mix":{"Bash":31,"Read":5,"Edit":4,"ToolSearch":2,"TaskStop":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":14957,"sequence":"EEEEXXXXEEEEXXXEEXEXEEEXXXEXXEXEXEXEEEEXEXE","explore_pos":0.499,"execute_pos":0.501,"separation":0.002},{"validity_flags":1,"noop_frac":0.9,"polls_void":true,"redundant_calls":825,"redundant_frac":0.938,"net_total":1,"net_kinds":[{"kind":"package","count":1}],"crossover_pos":0.057,"purity":0.966,"crossover_index":50,"label":"opus sympy r2","session":"8aac5b15","n_tool_calls":880,"n_turns":878,"duration":2687.8710000514984,"cost":147.11611275,"n_errors":2,"n_retry_loops":1,"explore":44,"execute":831,"explore_share":0.05,"tool_mix":{"Bash":861,"Read":9,"Monitor":5,"Edit":4,"ToolSearch":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":66896,"sequence":"EEEEEEEXXXXEEXEXXXXXEEXXXEXEEEEEEEXXEEEEEEEEXXEEEEXEXXXXXXXXXXXXXEEEEXEXXEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXEEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXEXXX","explore_pos":0.076,"execute_pos":0.522,"separation":0.446},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":7,"redundant_frac":0.25,"net_total":2,"net_kinds":[{"kind":"package","count":2}],"crossover_pos":0.179,"purity":0.75,"crossover_index":5,"label":"opus sympy r3","session":"19e67667","n_tool_calls":28,"n_turns":29,"duration":181.0550000667572,"cost":3.01185075,"n_errors":3,"n_retry_loops":0,"explore":12,"execute":16,"explore_share":0.429,"tool_mix":{"Bash":22,"Edit":3,"Read":2,"ToolSearch":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":11834,"sequence":"EEEEEXXEEXXXXXXXXXXXEXEEEXEX","explore_pos":0.432,"execute_pos":0.551,"separation":0.119},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":18,"redundant_frac":0.225,"net_total":1,"net_kinds":[{"kind":"package","count":1}],"crossover_pos":0.463,"purity":0.625,"crossover_index":37,"label":"opus sympy r4","session":"00d001ed","n_tool_calls":80,"n_turns":80,"duration":6957.0579998493195,"cost":9.97795875,"n_errors":5,"n_retry_loops":0,"explore":39,"execute":41,"explore_share":0.487,"tool_mix":{"Bash":65,"Read":8,"Edit":6,"Write":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":29484,"sequence":"EEEEEEXXXXEEXXEXXEXXXEEXEEEEEEXEEXEEEXXXXEXXEEEXXXXEEXXEXXXEXXEEXXEEXXEEEXXXXXXE","explore_pos":0.448,"execute_pos":0.55,"separation":0.102},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":3,"redundant_frac":0.079,"net_total":3,"net_kinds":[{"kind":"package","count":3}],"crossover_pos":0.684,"purity":0.684,"crossover_index":26,"label":"fable pytest r1","session":"1de188d3","n_tool_calls":38,"n_turns":29,"duration":306.768000125885,"cost":0.80820855,"n_errors":2,"n_retry_loops":1,"explore":20,"execute":18,"explore_share":0.526,"tool_mix":{"Bash":29,"Write":5,"Read":2,"Edit":2},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":22306,"sequence":"EEEEXXXXXXXXEEEXEEEEEEEEEEXXXXXXXXEEXE","explore_pos":0.481,"execute_pos":0.521,"separation":0.04},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":5,"redundant_frac":0.263,"net_total":3,"net_kinds":[{"kind":"package","count":3}],"crossover_pos":0.211,"purity":0.895,"crossover_index":4,"label":"fable pytest r2","session":"92867bd5","n_tool_calls":19,"n_turns":18,"duration":108.2170000076294,"cost":0.26965125,"n_errors":1,"n_retry_loops":0,"explore":6,"execute":13,"explore_share":0.316,"tool_mix":{"Bash":15,"Edit":3,"Read":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":5545,"sequence":"EEEEXXXXXXXEXEXXXXX","explore_pos":0.278,"execute_pos":0.603,"separation":0.325},{"validity_flags":0,"noop_frac":0.0,"polls_void":false,"redundant_calls":5,"redundant_frac":0.294,"net_total":3,"net_kinds":[{"kind":"package","count":3}],"crossover_pos":0.235,"purity":0.941,"crossover_index":4,"label":"fable pytest r3","session":"160f13cc","n_tool_calls":17,"n_turns":17,"duration":100.1800000667572,"cost":0.23355795,"n_errors":2,"n_retry_loops":0,"explore":5,"execute":12,"explore_share":0.294,"tool_mix":{"Bash":14,"Edit":2,"Read":1},"top_tool":"Bash","cache_read_share":1.0,"output_tokens":4689,"sequence":"EEEEXXXXXXXEXXXXX","explore_pos":0.212,"execute_pos":0.62,"separation":0.408}]</script>
+<script>
+const R = JSON.parse(document.getElementById('data').textContent);
+const esc = x => String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const fmt = (v,nd=2)=> v==null ? '—' : (typeof v==='number' ? (Number.isInteger(v)?v:v.toFixed(nd)) : v);
+document.getElementById('meta').textContent = `${R.length} run${R.length===1?'':'s'} compared`;
+
+// ---- metrics table (sortable) ----
+const COLS=[['run','label'],['calls','n_tool_calls'],['turns','n_turns'],
+  ['dur(s)','duration'],['cost$','cost'],['err','n_errors'],['loops','n_retry_loops'],
+  ['redun%','redundant_frac'],
+  ['expl%','explore_share'],['sep','separation'],['pure','purity'],['poll%','noop_frac'],
+  ['cache%','cache_read_share'],['net','net_total'],['flags','validity_flags'],
+  ['top tool','top_tool']];
+let sortK=null, sortDir=1;
+function drawTbl(){
+  let rows=[...R];
+  if(sortK) rows.sort((a,b)=>{ const x=a[sortK], y=b[sortK];
+    if(x==null) return 1; if(y==null) return -1;
+    return (typeof x==='number' ? x-y : String(x).localeCompare(String(y)))*sortDir; });
+  let s=`<thead><tr>${COLS.map(([h,k],i)=>
+    `<th class="${i?'num':''}" data-k="${k}">${h}${sortK===k?` <span class="arr">${sortDir>0?'▲':'▼'}</span>`:''}</th>`).join('')}</tr></thead><tbody>`;
+  s+=rows.map(r=>`<tr>${COLS.map(([h,k],i)=>{
+    let v=r[k];
+    if(k==='duration') v=v.toFixed(0);
+    else if(k==='cost') v=v.toFixed(2);
+    else if(k==='purity' && v!=null)
+      // flag rows whose phase metrics are a polling artifact (see render_text)
+      v=`${v.toFixed(2)}${r.polls_void?'<b title="polling artifact — do not cite" style="color:var(--error)">!</b>':''}`
+        +`<span class="pbar"><i style="width:${100*Math.max(0,Math.min(1,r[k]))}%"></i></span>`;
+    else v=esc(fmt(v));
+    const cls=(i?'num':'')+((k==='validity_flags'&&r[k]>0)?' flag':'');
+    return `<td class="${cls}">${v}</td>`;
+  }).join('')}</tr>`).join('');
+  document.getElementById('tbl').innerHTML=s+'</tbody>';
+  document.querySelectorAll('#tbl thead th').forEach(th=>
+    th.addEventListener('click',()=>{ const k=th.dataset.k;
+      sortDir = (sortK===k)? -sortDir : (k==='label'?1:-1); sortK=k; drawTbl(); }));
+}
+drawTbl();
+
+// ---- phase sequences as animated ribbons ----
+(function(){
+  document.getElementById('seqs').innerHTML = R.map((r,ri)=>{
+    const raw=r.sequence||'', k=r.crossover_index;
+    const cells=raw.split('').map((ch,i)=>
+      (k!=null && i===k ? `<i class="xo" style="animation:rib .45s var(--ease) ${ri*120+i*28}ms forwards"></i>` : '')
+      + `<i class="${ch}" title="#${i+1} ${ch==='E'?'explore':'execute'}" style="animation:rib .45s var(--ease) ${ri*120+i*28}ms forwards"></i>`).join('')
+      + (k!=null && k===raw.length ? `<i class="xo" style="animation:rib .45s var(--ease) ${ri*120+raw.length*28}ms forwards"></i>` : '');
+    return `<div class="seqrow"><div class="seqcap"><b>${esc(r.label)}</b> `+
+      `· sep ${fmt(r.separation)} · purity ${fmt(r.purity)} · n=${raw.length}</div>`+
+      `<div class="ribbon">${cells||'(no phased calls)'}</div></div>`;
+  }).join('');
+})();
+
+// ---- tool mix ----
+(function(){
+  const names=[...new Set(R.flatMap(r=>Object.keys(r.tool_mix||{})))];
+  const palette=['#3987e5','#d95926','#199e70','#9085e9','#c98500','#d55181','#8f9099'];
+  const color=n=>palette[names.indexOf(n)%palette.length];
+  let s=`<thead><tr><th>run</th><th>mix</th><th class="num">total</th></tr></thead><tbody>`;
+  s+=R.map(r=>{
+    const mix=r.tool_mix||{}, total=Object.values(mix).reduce((a,b)=>a+b,0)||1;
+    const bar=Object.entries(mix).sort((a,b)=>b[1]-a[1]).map(([n,c])=>
+      `<span title="${esc(n)}: ${c}" style="width:${100*c/total}%;background:${color(n)}"></span>`).join('');
+    const lbl=Object.entries(mix).sort((a,b)=>b[1]-a[1]).map(([n,c])=>`${esc(n)} ${c}`).join(' · ');
+    return `<tr><td>${esc(r.label)}</td><td><div class="mix">${bar}</div>`+
+      `<div style="color:var(--muted);font-size:11px;margin-top:4px">${lbl}</div></td>`+
+      `<td class="num">${total}</td></tr>`;
+  }).join('');
+  document.getElementById('mix').innerHTML=s+'</tbody>';
+  const legend=names.map(n=>`<span class="chip"><i class="dot" style="background:${color(n)}"></i>${esc(n)}</span>`).join('');
+  document.getElementById('mix').insertAdjacentHTML('afterend',`<div class="legend">${legend}</div>`);
+})();
+</script>
+</body>
+</html>
